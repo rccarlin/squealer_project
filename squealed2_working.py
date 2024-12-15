@@ -22,7 +22,6 @@ global data
 # i would like to be coding mostly in python as I'm much more comfortable with it, so can I only use javascript for the noises?
 
 app = FastAPI()
-# fixme make graph bigger, make it a fixed range/ domain
 
 # calculate the line, return yhats and loss
 def line_fit(points):
@@ -375,6 +374,8 @@ configure(app, InteractiveGraph)
 # runs the program
 def main():
     # replace this with taking in data irl
+
+    print("hello world")
     x = np.random.uniform(0, 10, 20)
     y = 2 * x + np.random.uniform(-3, 3, 20)
 
