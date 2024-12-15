@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 import plotly.graph_objs as go
 from contextlib import asynccontextmanager
 import sys
+import math
 
 
 
@@ -38,9 +39,10 @@ def line_fit(points):
     coef = np.polyfit(x, y, 1, w=weights)  # can change degree to be bigger to fit fancier...
 
     best_fit_line = coef[0] * np.array(x) + coef[1]
-    resid_squared = (y - best_fit_line) ** 2
+    # resid_squared = (y - best_fit_line) ** 2
+    resids = y - best_fit_line
 
-    return best_fit_line, resid_squared, coef
+    return best_fit_line, resids, coef
 
 
 def make_plot(data):
@@ -49,7 +51,8 @@ def make_plot(data):
     x = data[0:-1][0]  # fixme make tuples!!!
     y = data[-1]
 
-    best_fit_line, resid_squared, _ = line_fit(data)
+    best_fit_line, resids, _ = line_fit(data)
+    resid_squared = resids**2
     # plotting what we were given...
     scatter_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=y[0:-2], mode='markers',marker=dict(color= resid_squared, colorscale="Viridis", colorbar=dict(title= "Residual Squared", x=1.1, y=.5, len=.5)), name='Data Points')
     best_fit_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
@@ -68,18 +71,22 @@ def make_plot(data):
     fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
 
     # Add click event handling in Plotly to play a sound when a point is clicked
-    fig.update_layout(clickmode='event+select')
+    # fig.update_layout(clickmode='event+select')
 
     return json.loads(pio.to_json(fig))
 
-def make_line_chart(coef):
-    temp = [go.Scatter(x=coef[1], y=coef[0], mode="markers")]
-    # temp = [go.Scatter(x=[1, 2, 3], y=[4, 1, 2], mode="markers")]
+def make_prog_chart(coef, likelihood):
+    temp = [go.Scatter(x=coef[1], y=coef[0], mode="markers", marker=dict(color=likelihood, colorscale="Viridis", colorbar=dict(title= "Approx Log Likelihood", x=1.1, y=.5, len=.5)))]  #fixme, this and the other one, what are the color arguments...
     layout = go.Layout(title="Coefficients Tried", xaxis_title="Intercept", yaxis_title="Slope")
     fig = go.Figure(data=temp, layout=layout)
-    # return pio.to_html(fig, full_html=False)
     return json.loads(pio.to_json(fig))
 
+def log_likelihood(resids):
+    resid_squared = resids**2
+    rss = resid_squared.sum()
+    resid_var = np.var(resids, ddof=2)
+    n = len(resids)
+    return -n / 2 * np.log(2 * math.pi * resid_var) - rss / (2 * resid_var)
 
 # @component
 # def LineChart():
@@ -92,12 +99,14 @@ def InteractiveGraph():
     points, set_points = hooks.use_state(data)  # data
     pitch, set_pitch = hooks.use_state(440)  # tone
     graph_json = make_plot(points)
-    best_fit_line, resid_squared, coef = line_fit(data)  # fixme actually use best_fit_line to color the points
+    best_fit_line, resid, coef = line_fit(data)
 
     # in addition to graphing the data, we will also keep track of the lines tried so far
     try_list = [[coef[0]], [coef[1]]]
     tries, set_tries = hooks.use_state(try_list)
-    graph_temp = make_line_chart(tries)
+    likelihood_list = [log_likelihood(resid)]
+    likelihood, set_likelihood = hooks.use_state(likelihood_list)
+    graph_temp = make_prog_chart(tries, likelihood)
 
     script= f'''
             function renderPlot() {{
@@ -141,34 +150,32 @@ def InteractiveGraph():
 
     def update_point(all_points, point, dx, dy, freq):
         new_points = all_points[:]
-        # new_points[-point]["x"] += dx
-        # new_points[-point]["y"] += dy
-
         new_points[0][-point] += dx
         new_points[1][-point] += dy
 
         # okay what pitch should we do?
-        line, resid, coef = line_fit(new_points)
-        temp = resid.sum()
+        line, resids, coef = line_fit(new_points)
+        resid_squared = resids**2
+        temp = resid_squared.sum()
         if temp > 1000:  # figure out what the max error should be?
             temp = 1000
         new_pitch = temp * 1200 / 5000 + 300
 
-        return new_points, new_pitch, coef, line
+        return new_points, new_pitch, coef, resids
 
-    def redraw(all_points, chart):
-        if chart == 1:  # update the primary graph
-            new_plot = make_plot(all_points)
-            js_code = f"""
-                    Plotly.react('plot1', {new_plot['data']}, {new_plot['layout']});
-                    """
-
-        else:  # update the graph of coefficients
-            new_plot = make_line_chart(all_points)
-            js_code = f"""
-                    Plotly.react('plot2', {new_plot['data']}, {new_plot['layout']});
-                    """
-            return html.script({"type": "text/javascript"}, js_code)
+    # def redraw(all_points, chart):
+    #     if chart == 1:  # update the primary graph
+    #         new_plot = make_plot(all_points)
+    #         js_code = f"""
+    #                 Plotly.react('plot1', {new_plot['data']}, {new_plot['layout']});
+    #                 """
+    #
+    #     else:  # update the graph of coefficients
+    #         new_plot = make_prog_chart(all_points)
+    #         js_code = f"""
+    #                 Plotly.react('plot2', {new_plot['data']}, {new_plot['layout']});
+    #                 """
+    #         return html.script({"type": "text/javascript"}, js_code)
 
 
 
@@ -227,21 +234,23 @@ def InteractiveGraph():
             # set_points(new_points)  # is this what's bugging
 
             if pressed:
-                new_points, new_pitch, coef, line  = update_point(points, point, dx, dy, freq)
+                new_points, new_pitch, coef, resids  = update_point(points, point, dx, dy, freq)
 
                 temp_tries = tries[:]
                 temp_tries[0].append(coef[0])
                 temp_tries[1].append(coef[1])
 
-                set_tries(temp_tries)  # update the states
+                # trying something
+                # set_tries(temp_tries)  # update the states
                 set_pitch(new_pitch)
+                set_likelihood(likelihood + [log_likelihood(resids)])
 
         except WebSocketDisconnect as e:
             print("closed window caught by handler for reason {e.reason}")
 
-    # now update the primary graph and the graph of models tried so far
-    hooks.use_effect(lambda: redraw(points, 1), [points])
-    hooks.use_effect(lambda: redraw(points, 2), [points])  #fixme wait is this supposed to be points, or tries...?
+    # don't need this code anymore...
+    # hooks.use_effect(lambda: redraw(points, 1), [points])
+    # hooks.use_effect(lambda: redraw(points, 2), [points])
 
     def play_tone(loss):
         return html.script(
