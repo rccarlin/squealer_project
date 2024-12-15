@@ -72,8 +72,8 @@ def make_plot(data):
 
     return json.loads(pio.to_json(fig))
 
-def make_line_chart(points):
-    temp = [go.Scatter(x=points[1], y=points[0], mode="markers")]
+def make_line_chart(coef):
+    temp = [go.Scatter(x=coef[1], y=coef[0], mode="markers")]
     # temp = [go.Scatter(x=[1, 2, 3], y=[4, 1, 2], mode="markers")]
     layout = go.Layout(title="Coefficients Tried", xaxis_title="Intercept", yaxis_title="Slope")
     fig = go.Figure(data=temp, layout=layout)
@@ -81,18 +81,20 @@ def make_line_chart(points):
     return json.loads(pio.to_json(fig))
 
 
-@component
-def LineChart():
-    line_chart_html = make_line_chart()
-    return html.div(dangerously_set_inner_html=line_chart_html)
+# @component
+# def LineChart():
+#     line_chart_html = make_line_chart()
+#     return html.div(dangerously_set_inner_html=line_chart_html)
 
 @component
 def InteractiveGraph():
     global data
-    points, set_points = hooks.use_state(data)
-    pitch, set_pitch = hooks.use_state(440)
+    points, set_points = hooks.use_state(data)  # data
+    pitch, set_pitch = hooks.use_state(440)  # tone
     graph_json = make_plot(points)
-    best_fit_line, resid_squared, coef = line_fit(data)
+    best_fit_line, resid_squared, coef = line_fit(data)  # fixme actually use best_fit_line to color the points
+
+    # in addition to graphing the data, we will also keep track of the lines tried so far
     try_list = [[coef[0]], [coef[1]]]
     tries, set_tries = hooks.use_state(try_list)
     graph_temp = make_line_chart(tries)
@@ -154,15 +156,21 @@ def InteractiveGraph():
 
         return new_points, new_pitch, coef, line
 
-    def redraw(all_points):
-        try:
+    def redraw(all_points, chart):
+        if chart == 1:  # update the primary graph
             new_plot = make_plot(all_points)
             js_code = f"""
                     Plotly.react('plot1', {new_plot['data']}, {new_plot['layout']});
                     """
+
+        else:  # update the graph of coefficients
+            new_plot = make_line_chart(all_points)
+            js_code = f"""
+                    Plotly.react('plot2', {new_plot['data']}, {new_plot['layout']});
+                    """
             return html.script({"type": "text/javascript"}, js_code)
-        except WebSocketDisconnect:
-            print("disconnect caught in redraw")
+
+
 
     # Handle keypress events
     def handle_key_down(event):
@@ -220,12 +228,20 @@ def InteractiveGraph():
 
             if pressed:
                 new_points, new_pitch, coef, line  = update_point(points, point, dx, dy, freq)
+
+                temp_tries = tries[:]
+                temp_tries[0].append(coef[0])
+                temp_tries[1].append(coef[1])
+
+                set_tries(temp_tries)  # update the states
                 set_pitch(new_pitch)
 
         except WebSocketDisconnect as e:
             print("closed window caught by handler for reason {e.reason}")
 
-    hooks.use_effect(lambda: redraw(points), [points])
+    # now update the primary graph and the graph of models tried so far
+    hooks.use_effect(lambda: redraw(points, 1), [points])
+    hooks.use_effect(lambda: redraw(points, 2), [points])  #fixme wait is this supposed to be points, or tries...?
 
     def play_tone(loss):
         return html.script(
@@ -261,101 +277,6 @@ def InteractiveGraph():
         ]
     )
 
-@component
-def GraphWithSoundControl():
-    def on_click(event):
-        return html.div(
-            [
-                html.h1("Adjust Tone Pitch"),
-                # html.button({"onclick": lambda _: play_tone()}, "Play Tone"),
-                html.button({"id": "playTone"}, "Play Tone"),
-                html.input({"type": "range", "id": "pitchSlider", "min": "200", "max": "1000", "step": "50", "value": "440"}),
-                html.label({"for": "pitchSlider"}, "Tone Frequency (Pitch)"),
-                html.input(
-                    {"type": "range", "id": "volumeSlider", "min": "0", "max": "1", "step": "0.1", "value": "0.5"}),
-                html.label({"for": "volumeSlider"}, "Volume (0 to 1)"),
-                html.script({
-                    "src": "https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"
-                }),
-                html.script("""
-                                    window.onload = function() {
-                                        document.getElementById('playTone').onclick = function() {
-                                            console.log("Play Tone button clicked!");
-
-                                            // Retrieve slider values for pitch and volume
-                                            let pitch = document.getElementById('pitchSlider').value;
-                                            let volume = document.getElementById('volumeSlider').value;
-
-                                            console.log("Pitch set to: " + pitch);
-                                            console.log("Volume set to: " + volume);
-
-                                            // Create a new audio context
-                                            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                                            const oscillator = audioContext.createOscillator();
-                                            const gainNode = audioContext.createGain();
-
-                                            // Set the oscillator type and frequency
-                                            oscillator.type = 'sine';  // You can change to 'square', 'sawtooth', or 'triangle'
-                                            oscillator.frequency.setValueAtTime(pitch, audioContext.currentTime); // Set frequency to the slider value
-
-                                            // Set the volume
-                                            gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
-
-                                            // Connect the oscillator to the gain node, then to the audio context
-                                            oscillator.connect(gainNode);
-                                            gainNode.connect(audioContext.destination);
-
-                                            // Start the oscillator
-                                            oscillator.start();
-
-                                            // Stop the oscillator after 1 second (you can adjust this)
-                                            oscillator.stop(audioContext.currentTime + 1);
-
-                                            console.log("Sound played!");
-                                        };
-                                    };
-                                """),
-            ]
-        )
-    return html.div(on_click(None))
-
-def play_tone():
-    return html.script(
-        """
-        var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        var oscillator = audioCtx.createOscillator();
-        var gainNode = audioCtx.createGain(); // Create a gain node for volume control
-
-
-        // Get slider values
-        var frequency = document.getElementById('pitchSlider').value;
-        var volume = document.getElementById('volumeSlider').value; // Get volume from the slider
-
-        console.log("Playing tone with frequency: " + frequency + " Hz and volume: " + volume);
-
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, audioCtx.currentTime); // Frequency in Hertz
-
-        gainNode.gain.setValueAtTime(volume, audioCtx.currentTime); // Set gain value
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-
-        oscillator.start();
-        // Make sure the tone lasts long enough to hear (2 seconds)
-        setTimeout(function() {
-            oscillator.stop();
-        }, 2000); // Stop after 2 seconds
-        """
-    )
-
-# @app.websocket("/disconnect-endpoint")
-# async def disconnect_endpoint(websocket: WebSocket):
-#     out = await websocket.receive_text()
-#     reason = json.loads(out).get("reason", "Unknown reason")
-#     print(f"Client disconnected with reason: {reason}")
-#     # Handle the disconnection logic
-#     await websocket.close()
 
 @app.post("/disconnect-endpoint")
 async def disconnect_endpoint(request: Request):
