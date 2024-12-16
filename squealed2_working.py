@@ -64,11 +64,13 @@ def make_plot(data):
     # plotting
     points_on_line_trace = plotly.graph_objects.Scatter(
         x=x_handlebars, y=y_handlebars,
-        mode='markers', name='Extra Points on Line',
+        mode='markers', name='Handlebars',
         marker=dict(color='red', size=10)  # Customizing color and size
     )
 
+
     fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
+    fig.update_layout(title="Data")
 
     # Add click event handling in Plotly to play a sound when a point is clicked
     # fig.update_layout(clickmode='event+select')
@@ -259,10 +261,19 @@ def InteractiveGraph():
                 "tabIndex": 0,  # Makes the div focusable to receive key events
                 "autofocus": True,
                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
-                    }),
+                "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
+
+                }, "Use Arrow Keys to adjust the line from the right, and WASD to adjust from the left."),
             play_tone(pitch)
         ]
     )
+# html.div({
+#                 "onFocus": handle_focus,  # Log when focused
+#                 "tabIndex": 0,  # Makes the div focusable to receive key events
+#                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
+#                 "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
+#                 #"ref": ref
+#                     }, "Click here to focus and press WASD or Arrow keys."),
 
 
 @app.post("/disconnect-endpoint")

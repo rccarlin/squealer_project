@@ -59,7 +59,7 @@ def make_plot(data):
     # plotting
     points_on_line_trace = plotly.graph_objects.Scatter(
         x=x_handlebars, y=y_handlebars,
-        mode='markers', name='Extra Points on Line',
+        mode='markers', name='Handle Bars',
         marker=dict(color='red', size=10)  # Customizing color and size
     )
 
@@ -253,7 +253,8 @@ def InteractiveGraph():
                 "tabIndex": 0,  # Makes the div focusable to receive key events
                 "autofocus": True,
                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
-            }),
+                "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
+            },"Use the Arrow keys and WASD to adjust the line to find a better fit!"),
             play_tone(pitch)
         ]
     )
@@ -277,8 +278,6 @@ configure(app, InteractiveGraph)
 # runs the program
 def main():
     # replace this with taking in data irl
-
-    print("hello world")
     x = np.random.uniform(0, 10, 20)
     y = 2 * x + np.random.uniform(-3, 3, 20)
 
