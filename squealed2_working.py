@@ -157,9 +157,13 @@ def InteractiveGraph():
         line, resids, coef = line_fit(new_points)
         resid_squared = resids**2
         temp = resid_squared.sum()
-        if temp > 1000:  # figure out what the max error should be?
-            temp = 1000
-        new_pitch = temp * 1200 / 5000 + 300
+        if temp > 2000:  # figure out what the max error should be?, if you even need that...
+            temp = 2000
+        minHz = 300
+        maxHz = 1200
+        maxErr = 2500
+        new_pitch =  minHz + (temp / maxErr) * (maxHz - minHz)
+        print(new_pitch)
 
         return new_points, new_pitch, coef, resids
 
@@ -186,7 +190,7 @@ def InteractiveGraph():
             nonlocal pitch
 
             # 1 so I can use -1 to get the 20th percentile, etc
-            delta = .1  # fixme, customize, always be positive
+            delta = .5  # fixme, customize, always be positive
 
             pressed = False
             point = 0
@@ -334,23 +338,4 @@ def main():
 
 main()
 
-
-# from interactive graph script before the else (inside the if)
-# graphDiv.on('plotly_click', function(data) {{
-                    #     if (data.points.length > 0) {{
-                    #         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    #         const oscillator = audioContext.createOscillator();
-                    #         const gainNode = audioContext.createGain();
-                    #         oscillator.type = 'sine';
-                    #
-                    #         // to customize as you move the line around
-                    #         oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // Set frequency to the slider value
-                    #         gainNode.gain.setValueAtTime(.3, audioContext.currentTime)
-                    #         oscillator.connect(gainNode);
-                    #         gainNode.connect(audioContext.destination);
-                    #         oscillator.start();
-                    #         oscillator.stop(audioContext.currentTime + 1);  // eventually i don't want it to stop
-                    #
-                    #     }}
-                    # }});
 
