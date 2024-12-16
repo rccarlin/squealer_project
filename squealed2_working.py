@@ -157,30 +157,14 @@ def InteractiveGraph():
         line, resids, coef = line_fit(new_points)
         resid_squared = resids**2
         temp = resid_squared.sum()
-        if temp > 2000:  # figure out what the max error should be?, if you even need that...
-            temp = 2000
+        if temp > 3500:  # figure out what the max error should be?, if you even need that...
+            temp = 3500
         minHz = 300
         maxHz = 1200
-        maxErr = 2500
+        maxErr = 3500
         new_pitch =  minHz + (temp / maxErr) * (maxHz - minHz)
-        print(new_pitch)
 
         return new_points, new_pitch, coef, resids
-
-    # def redraw(all_points, chart):
-    #     if chart == 1:  # update the primary graph
-    #         new_plot = make_plot(all_points)
-    #         js_code = f"""
-    #                 Plotly.react('plot1', {new_plot['data']}, {new_plot['layout']});
-    #                 """
-    #
-    #     else:  # update the graph of coefficients
-    #         new_plot = make_prog_chart(all_points)
-    #         js_code = f"""
-    #                 Plotly.react('plot2', {new_plot['data']}, {new_plot['layout']});
-    #                 """
-    #         return html.script({"type": "text/javascript"}, js_code)
-
 
 
     # Handle keypress events
@@ -252,9 +236,6 @@ def InteractiveGraph():
         except WebSocketDisconnect as e:
             print("closed window caught by handler for reason {e.reason}")
 
-    # don't need this code anymore...
-    # hooks.use_effect(lambda: redraw(points, 1), [points])
-    # hooks.use_effect(lambda: redraw(points, 2), [points])
 
     def play_tone(loss):
         return html.script(
@@ -269,23 +250,16 @@ def InteractiveGraph():
                 }})();
                 """)
 
-    def handle_focus(event):
-        # Log when the div is focused
-        print("Div is focused and ready to capture key presses.")
-
-    # tone_test = play_tone(500)
     return html.div(
         [
             html.div({"id": "plot1", "style": {"width": "600px", "height": "400px"}}),
             html.div({"id": "plot2", "style": {"width": "600px", "height": "400px"}}),
             html.script(script),  # JavaScript to load Plotly and render the chart
             html.div({
-                "onFocus": handle_focus,  # Log when focused
                 "tabIndex": 0,  # Makes the div focusable to receive key events
+                "autofocus": True,
                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
-                "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
-                #"ref": ref
-                    }, "Click here to focus and press WASD or Arrow keys."),
+                    }),
             play_tone(pitch)
         ]
     )

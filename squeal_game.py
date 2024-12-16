@@ -158,11 +158,11 @@ def InteractiveGraph():
         line, resids, coef = line_fit(new_points)
         resid_squared = resids ** 2
         temp = resid_squared.sum()
-        if temp > 2000:  # figure out what the max error should be?, if you even need that...
-            temp = 2000
+        if temp > 3500:  # figure out what the max error should be?, if you even need that...
+            temp = 3500
         minHz = 300
         maxHz = 1200
-        maxErr = 2500
+        maxErr = 3500
         new_pitch =  minHz + (temp / maxErr) * (maxHz - minHz)
 
         return new_points, new_pitch, coef, resids
@@ -244,23 +244,16 @@ def InteractiveGraph():
                 }})();
                 """)
 
-    def handle_focus(event):
-        # Log when the div is focused
-        print("Div is focused and ready to capture key presses.")
-
-    # tone_test = play_tone(500)
     return html.div(
         [
             html.div({"id": "plot1", "style": {"width": "600px", "height": "400px"}}),
             html.div({"id": "plot2", "style": {"width": "600px", "height": "400px"}}),
             html.script(script),  # JavaScript to load Plotly and render the chart
             html.div({
-                "onFocus": handle_focus,  # Log when focused
                 "tabIndex": 0,  # Makes the div focusable to receive key events
+                "autofocus": True,
                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
-                "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
-                # "ref": ref
-            }, "Click here to focus and press WASD or Arrow keys."),
+            }),
             play_tone(pitch)
         ]
     )
