@@ -27,23 +27,57 @@ global model
 
 app = FastAPI()
 
-# calculate the line, return yhats and loss
+# calculate the line, return (some sense of) loss, and the coefficients needed to make the line
 def line_fit(points):
-    x = points[0:-1][0]
+    x = points[0:-1]
     y = points[-1]
 
-    # this is currently just linear regression, but could potentially change this to be more fancy?
-    # want to put extra weight on the two handlebars
-    weights = np.ones_like(x)
-    # make the line really want to be with handlebars
-    weights[-1] = 100  # maybe change this if too crazy
-    weights[-2] = 100
-    # or maybe do legrange to get it through your points...
-    coef = np.polyfit(x, y, 1, w=weights)  # can change degree to be bigger to fit fancier...
+    # okay so the handlebars have already been fit to the line, so can't we just extract those points to make a line and then calculate loss...
 
-    best_fit_line = coef[0] * np.array(x) + coef[1]
-    # resid_squared = (y - best_fit_line) ** 2
-    resids = y - best_fit_line
+    # if model is linear, the handlebars are in x[0] and y
+    # and if it's logistic, it's in x[0] and x[1], I believe...
+
+    # get the handlebars so we can draw a line between them
+    start = (0,0)
+    stop = (0,0)
+    global model  # fixme, if change this to a state later, pass that in
+    if model == "linear":
+        start = (x[0][-1], y[-1])
+        stop = (x[0][-2], y[-2])
+    elif model == "logistic":
+        start = (x[0][-1], x[1][-1])
+        stop = (x[0][-2], x[1][-2])
+
+    # now we have a line
+    slope = (stop[1] - start[1]) / (stop[0] - start[0])
+    intercept = start[1] - slope * start[0]
+
+    coef = [slope, intercept]  # his is based off of the np.polyfit coef returns, where intercept is last
+
+    # now to calculate the error/ loss..
+    # for linear regression, this is the residuals, but for logistic, I want to calculate the uhhhhhh
+
+    resids = 0
+    if model == "linear":
+        best_fit_line = coef[0] * np.array(x[0]) + coef[1]  # fixme, now that x != points[0:-1][0], I think I need that extra [0]... we'll see
+        resids = y - best_fit_line
+    elif model == "logistic":
+        print()
+
+
+    # old code...
+    # # this is currently just linear regression, but could potentially change this to be more fancy?
+    # # want to put extra weight on the two handlebars
+    # weights = np.ones_like(x)
+    # # make the line really want to be with handlebars
+    # weights[-1] = 100  # maybe change this if too crazy
+    # weights[-2] = 100
+    # # or maybe do legrange to get it through your points...
+    # coef = np.polyfit(x, y, 1, w=weights)  # can change degree to be bigger to fit fancier...
+    #
+    # best_fit_line = coef[0] * np.array(x) + coef[1]
+    # # resid_squared = (y - best_fit_line) ** 2
+    # resids = y - best_fit_line
 
     return best_fit_line, resids, coef
 
@@ -75,13 +109,10 @@ def make_plot(data):
     fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
     fig.update_layout(title="Data")
 
-    # Add click event handling in Plotly to play a sound when a point is clicked
-    # fig.update_layout(clickmode='event+select')
-
     return json.loads(pio.to_json(fig))
 
 def make_prog_chart(coef, likelihood):
-    temp = [go.Scatter(x=coef[1], y=coef[0], mode="markers", marker=dict(color=likelihood, colorscale="Viridis", colorbar=dict(title= "Approx Log Likelihood", x=1.1, y=.5, len=.5)))]  #fixme, this and the other one, what are the color arguments...
+    temp = [go.Scatter(x=coef[1], y=coef[0], mode="markers", marker=dict(color=likelihood, colorscale="Viridis", colorbar=dict(title= "Approx Log Likelihood", x=1.1, y=.5, len=.5)))]
     layout = go.Layout(title="Coefficients Tried", xaxis_title="Intercept", yaxis_title="Slope")
     fig = go.Figure(data=temp, layout=layout)
     return json.loads(pio.to_json(fig))
@@ -222,12 +253,6 @@ def InteractiveGraph():
                 point = 1
                 dx = delta
                 pressed = True
-            # else:
-            #     new_points = points
-            #     new_pitch = pitch
-            # print("new pitch:", new_pitch, "curr:", pitch)
-
-            # set_points(new_points)  # is this what's bugging
 
             if pressed:
                 new_points, new_pitch, coef, resids  = update_point(points, point, dx, dy)
@@ -286,9 +311,8 @@ def InteractiveGraph():
                         "max": 10,  # fixme, make more dynamic?
                         "value": step,
                         "onInput": handle_slider_change,
-                    }
-                ),  html.span(f"Value: {step}"),
-        ),
+                    }),  html.span(f"Value: {step}"),
+            ),
             play_tone(pitch)
         ]
     )
@@ -319,7 +343,7 @@ def generate_data():
 
         top = np.percentile(x, 80)
         bottom = np.percentile(x, 20)
-        x = np.append(x, [top, bottom])
+        x = [np.append(x, [top, bottom])]
         y = np.append(y, [slope * top + intercept, slope * bottom + intercept])
     elif model == "logistic":
         locations = np.random.uniform(-5, 5, 2)
@@ -333,10 +357,6 @@ def generate_data():
 
         x = np.vstack((cluster1, cluster2))
         y = np.hstack((label1, label2)).ravel()
-        # print(x)
-        # print("\n")
-        # print(y)
-        # print("\n\n")
 
         # now to fit a line and add handlebars
         mod = LogisticRegression()
@@ -350,9 +370,11 @@ def generate_data():
         bottom = np.percentile(x[:, 0], 20)
         right_x2 = slope * top + intercept
         left_x2 = slope * bottom + intercept
+        print(top, bottom)
 
         x = np.vstack((x, np.array([top, right_x2])))
         x = np.vstack((x, np.array([bottom, left_x2])))
+        x = [x[:,0], x[:,1]]
 
     return x, y
 
@@ -364,23 +386,15 @@ configure(app, InteractiveGraph)
 def main():
     # replace this with taking in data irl
     global model
-    model = "logistic"  # logistic or linear, eventually make this a button, make this easier to change
+    model = "linear"  # logistic or linear, eventually make this a button, make this easier to change
 
     x, y = generate_data()
 
     global data
-    # data = np.array([x, y])  # fixme can data always be a list? looks like this is fine
-    data = [x, y]
-    # data[0] stores all v values
-    # data[0][:,0] gets x1, etc
-    # print(data)
-    # print()
-    # print(data[0])  # data 0 just has all x values
-    # print()
-    # print(data[0][0])
-    # print()
-    # print(data[0][:,0])  # this is x1
-    # print("\n\n")
+    # data = np.array([x, y])  # old code just in case
+    # functions assume the data comes in the form of [x1, x2, ..., y]
+    data = x
+    data.append(y)
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
     # run(InteractiveGraph)
