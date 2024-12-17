@@ -54,7 +54,7 @@ def make_plot(data):
     best_fit_line, resids, _ = line_fit(data)
     resid_squared = resids**2
     # plotting what we were given...
-    scatter_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=y[0:-2], mode='markers',marker=dict(color= resid_squared, colorscale="Viridis", colorbar=dict(title= "Residual Squared", x=1.1, y=.5, len=.5)), name='Data Points')
+    scatter_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=y[0:-2], mode='markers',marker=dict(color= resid_squared, colorscale="portland", colorbar=dict(title= "Residual Squared", x=1.1, y=.5, len=.5)), name='Data Points')
     best_fit_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
 
     # the handlebars were added in main and are the last two points
@@ -110,6 +110,9 @@ def InteractiveGraph():
     likelihood, set_likelihood = hooks.use_state(likelihood_list)
     graph_temp = make_prog_chart(tries, likelihood)
 
+    # adjust stepsize
+    step, set_step = hooks.use_state(.1)
+
     script= f'''
             function renderPlot() {{
                 console.log("Rendering Plotly graph...");
@@ -150,7 +153,7 @@ def InteractiveGraph():
         }});'''
 
 
-    def update_point(all_points, point, dx, dy, freq):
+    def update_point(all_points, point, dx, dy):
         new_points = all_points[:]
         new_points[0][-point] += dx
         new_points[1][-point] += dy
@@ -176,13 +179,13 @@ def InteractiveGraph():
             nonlocal pitch
 
             # 1 so I can use -1 to get the 20th percentile, etc
-            delta = .5  # fixme, customize, always be positive
 
             pressed = False
             point = 0
             dx = 0
             dy = 0
-            freq = pitch
+            # print(step)
+            delta = float(step)
 
             if event["key"] == "ArrowUp":
                 point = 2
@@ -224,7 +227,7 @@ def InteractiveGraph():
             # set_points(new_points)  # is this what's bugging
 
             if pressed:
-                new_points, new_pitch, coef, resids  = update_point(points, point, dx, dy, freq)
+                new_points, new_pitch, coef, resids  = update_point(points, point, dx, dy)
 
                 temp_tries = tries[:]
                 temp_tries[0].append(coef[0])
@@ -252,6 +255,11 @@ def InteractiveGraph():
                 }})();
                 """)
 
+    def handle_slider_change(event):
+        set_step(event["target"]["value"])
+
+
+
     return html.div(
         [
             html.div({"id": "plot1", "style": {"width": "600px", "height": "400px"}}),
@@ -262,19 +270,25 @@ def InteractiveGraph():
                 "autofocus": True,
                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
                 "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
-
                 }, "Use Arrow Keys to adjust the line from the right, and WASD to adjust from the left."),
+            html.div(
+                {
+                    "style": {"display": "flex", "alignItems": "center", "gap": "10px"}
+                },
+                "Slider: ",
+                html.input(
+                    {
+                        "type": "range",
+                        "min": 0,
+                        "max": 10,  # fixme, make more dynamic?
+                        "value": step,
+                        "onInput": handle_slider_change,
+                    }
+                ),  html.span(f"Value: {step}"),
+        ),
             play_tone(pitch)
         ]
     )
-# html.div({
-#                 "onFocus": handle_focus,  # Log when focused
-#                 "tabIndex": 0,  # Makes the div focusable to receive key events
-#                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
-#                 "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
-#                 #"ref": ref
-#                     }, "Click here to focus and press WASD or Arrow keys."),
-
 
 @app.post("/disconnect-endpoint")
 async def disconnect_endpoint(request: Request):
