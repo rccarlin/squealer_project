@@ -15,11 +15,14 @@ import plotly.graph_objs as go
 from contextlib import asynccontextmanager
 import sys
 import math
+from sklearn.linear_model import LogisticRegression
+import pandas as pd
 
 
 
 
 global data
+global model
 # i would like to be coding mostly in python as I'm much more comfortable with it, so can I only use javascript for the noises?
 
 app = FastAPI()
@@ -290,16 +293,69 @@ def InteractiveGraph():
         ]
     )
 
-@app.post("/disconnect-endpoint")
-async def disconnect_endpoint(request: Request):
-    try:
-        out = await request.json()
-        reason = out.get("reason", "Unknown reason")
-        print(f"Client disconnected with reason: {reason}")
-        # Handle any additional logic here, like cleanup or logging
-        return JSONResponse(status_code=200, content={"message": "Disconnect handled"})
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid request data")
+# @app.post("/disconnect-endpoint")
+# async def disconnect_endpoint(request: Request):
+#     try:
+#         out = await request.json()
+#         reason = out.get("reason", "Unknown reason")
+#         print(f"Client disconnected with reason: {reason}")
+#         # Handle any additional logic here, like cleanup or logging
+#         return JSONResponse(status_code=200, content={"message": "Disconnect handled"})
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail="Invalid request data")
+#
+
+def generate_data():
+    global model
+
+    if model == "linear":
+        x = np.random.uniform(0, 10, 30)
+        y = 2 * x + np.random.uniform(-3, 3, 30)
+
+        # fit line and add handle bars
+        coef =  np.polyfit(x, y, 1)
+        slope = coef[0]
+        intercept = coef[1]
+
+        top = np.percentile(x, 80)
+        bottom = np.percentile(x, 20)
+        x = np.append(x, [top, bottom])
+        y = np.append(y, [slope * top + intercept, slope * bottom + intercept])
+    elif model == "logistic":
+        locations = np.random.uniform(-5, 5, 2)
+
+        rng = np.random.default_rng()
+        cluster1 = np.random.normal(loc=locations[0], size=(15,2)) # for 2d
+        label1 = rng.choice(a= np.array([0, 1]), size=15, p= [.80, .20])
+
+        cluster2 = np.random.normal(loc=locations[0], size=(15,2)) # for 2d
+        label2 = rng.choice(a= [0, 1], size=15, p= [.3, .7])
+
+        x = np.vstack((cluster1, cluster2))
+        y = np.hstack((label1, label2)).ravel()
+        # print(x)
+        # print("\n")
+        # print(y)
+        # print("\n\n")
+
+        # now to fit a line and add handlebars
+        mod = LogisticRegression()
+        mod.fit(x, y)
+
+        coef = mod.coef_[0]
+        intercept = mod.intercept_[0] / coef[1]
+        slope = -coef[0] / coef[1]
+
+        top = np.percentile(x[:, 0], 80)
+        bottom = np.percentile(x[:, 0], 20)
+        right_x2 = slope * top + intercept
+        left_x2 = slope * bottom + intercept
+
+        x = np.vstack((x, np.array([top, right_x2])))
+        x = np.vstack((x, np.array([bottom, left_x2])))
+
+    return x, y
+
 
 
 configure(app, InteractiveGraph)
@@ -307,33 +363,27 @@ configure(app, InteractiveGraph)
 # runs the program
 def main():
     # replace this with taking in data irl
+    global model
+    model = "logistic"  # logistic or linear, eventually make this a button, make this easier to change
 
-    print("hello world")
-    x = np.random.uniform(0, 10, 20)
-    y = 2 * x + np.random.uniform(-3, 3, 20)
-
-    # fixme another model, logistic
-
-    # want to find initial handlebars
-    slope, intercept, _, _, _ = stats.linregress(x, y)  # replace with target model
-
-    top = np.percentile(x, 80)
-    bottom = np.percentile(x, 20)
-    x = np.append(x, [top, bottom])
-    y = np.append(y, [slope * top + intercept, slope * bottom + intercept])
+    x, y = generate_data()
 
     global data
-    data = np.array([x, y])
-    # data = zip(x, y)
-
-
+    # data = np.array([x, y])  # fixme can data always be a list? looks like this is fine
+    data = [x, y]
+    # data[0] stores all v values
+    # data[0][:,0] gets x1, etc
+    # print(data)
+    # print()
+    # print(data[0])  # data 0 just has all x values
+    # print()
+    # print(data[0][0])
+    # print()
+    # print(data[0][:,0])  # this is x1
+    # print("\n\n")
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
     # run(InteractiveGraph)
-
-    # Run the application
-    # run(GraphWithSoundControl)
-
 
 main()
 
