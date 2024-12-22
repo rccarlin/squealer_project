@@ -54,15 +54,17 @@ def line_fit(points):
 
     coef = [slope, intercept]  # his is based off of the np.polyfit coef returns, where intercept is last
 
-    # now to calculate the error/ loss..
+    # now to calculate the error/ loss.
     # for linear regression, this is the residuals, but for logistic, I want to calculate the uhhhhhh
 
     resids = 0
+    best_fit_line = list()
     if model == "linear":
         best_fit_line = coef[0] * np.array(x[0]) + coef[1]  # fixme, now that x != points[0:-1][0], I think I need that extra [0]... we'll see
         resids = y - best_fit_line
     elif model == "logistic":
-        print()
+        best_fit_line = coef[0] * x[0] + coef[1]
+        resids = y * (x[1][0:-2] - coef[0] * x[0][0:-2] - coef[1]) / (coef[0]**2 + 1)**.5  # this is actually margins
 
 
     # old code...
@@ -85,20 +87,38 @@ def line_fit(points):
 def make_plot(data):
     # assumes that the handlebars are added to the bottom
 
-    x = data[0:-1][0]  # fixme make tuples!!!
+    x = data[0:-1]  # when this was just linear regression add [0]
     y = data[-1]
 
-    best_fit_line, resids, _ = line_fit(data)
-    resid_squared = resids**2
-    # plotting what we were given...
-    scatter_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=y[0:-2], mode='markers',marker=dict(color= resid_squared, colorscale="portland", colorbar=dict(title= "Residual Squared", x=1.1, y=.5, len=.5)), name='Data Points')
-    best_fit_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
+    best_fit_line, resids, coef = line_fit(data)
+    x_handlebars = []
+    y_handlebars = []
 
-    # the handlebars were added in main and are the last two points
-    x_handlebars = [x[-1], x[-2]]
-    y_handlebars = [y[-1], y[-2]]
 
-    # plotting
+    if model == "linear":
+        color = resids**2
+        # plotting what we were given...
+        scatter_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=y[0:-2], mode='markers',
+                                                     marker=dict(color=color, colorscale="portland",
+                                                                 colorbar=dict(title="Residual Squared", x=1.1, y=.5,
+                                                                               len=.5)), name='Data Points')
+        best_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
+        x_handlebars = [x[0][-1], x[0][-2]]
+        y_handlebars = [y[-1], y[-2]]
+
+    elif model == "logistic":
+        color = resids  # because this is margins... hopefully
+        # plotting what we were given...
+        scatter_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=x[1][0:-2], mode='markers',
+                                                     marker=dict(symbol=y, color=color, colorscale="portland",
+                                                                 colorbar=dict(title="Margins", x=1.1, y=.5,
+                                                                               len=.5)), name='Data Points')
+        best_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
+        x_handlebars = [x[0][-1], x[0][-2]]
+        y_handlebars = [x[1][-1], x[1][-2]]
+
+
+    # plotting the handlebars
     points_on_line_trace = plotly.graph_objects.Scatter(
         x=x_handlebars, y=y_handlebars,
         mode='markers', name='Handlebars',
@@ -111,8 +131,9 @@ def make_plot(data):
 
     return json.loads(pio.to_json(fig))
 
+
 def make_prog_chart(coef, likelihood):
-    temp = [go.Scatter(x=coef[1], y=coef[0], mode="markers", marker=dict(color=likelihood, colorscale="Viridis", colorbar=dict(title= "Approx Log Likelihood", x=1.1, y=.5, len=.5)))]
+    temp = [go.Scatter(x=coef[1], y=coef[0], mode="lines+markers", marker=dict(color=likelihood, colorscale="Viridis", colorbar=dict(title= "Approx Log Likelihood", x=1.1, y=.5, len=.5)))]
     layout = go.Layout(title="Coefficients Tried", xaxis_title="Intercept", yaxis_title="Slope")
     fig = go.Figure(data=temp, layout=layout)
     return json.loads(pio.to_json(fig))
@@ -346,14 +367,15 @@ def generate_data():
         x = [np.append(x, [top, bottom])]
         y = np.append(y, [slope * top + intercept, slope * bottom + intercept])
     elif model == "logistic":
-        locations = np.random.uniform(-5, 5, 2)
+        locations = [np.random.uniform(-3, -1), np.random.uniform(1,3) ]
 
         rng = np.random.default_rng()
-        cluster1 = np.random.normal(loc=locations[0], size=(15,2)) # for 2d
-        label1 = rng.choice(a= np.array([0, 1]), size=15, p= [.80, .20])
+        cluster1 = np.random.normal(loc=[locations[0], locations[0]], size=(15,2)) # for 2d
+        label1 = rng.choice(a= np.array([0, 1]), size=15, p= [.90, .10])
+        print(locations)
 
-        cluster2 = np.random.normal(loc=locations[0], size=(15,2)) # for 2d
-        label2 = rng.choice(a= [0, 1], size=15, p= [.3, .7])
+        cluster2 = np.random.normal(loc=[locations[1], locations[1]], size=(15,2)) # for 2d
+        label2 = rng.choice(a= [0, 1], size=15, p= [.2, .8])
 
         x = np.vstack((cluster1, cluster2))
         y = np.hstack((label1, label2)).ravel()
@@ -363,18 +385,48 @@ def generate_data():
         mod.fit(x, y)
 
         coef = mod.coef_[0]
-        intercept = mod.intercept_[0] / coef[1]
-        slope = -coef[0] / coef[1]
+        intercept = mod.intercept_[0]
 
-        top = np.percentile(x[:, 0], 80)
-        bottom = np.percentile(x[:, 0], 20)
-        right_x2 = slope * top + intercept
-        left_x2 = slope * bottom + intercept
-        print(top, bottom)
+        if abs(coef[1]) > abs(coef[0]):
+            top_x1 = np.percentile(x[:, 0], 80)
+            bottom_x1 = np.percentile(x[:, 0], 20)
+            right_x2 = -(coef[0] * top_x1 + intercept) / coef[1]
+            left_x2 = -(coef[0] * bottom_x1 + intercept) / coef[1]
+            x = np.vstack((x, np.array([top_x1, right_x2])))
+            x = np.vstack((x, np.array([bottom_x1, left_x2])))
+            print("1>0")
+            print(top_x1, right_x2)
+            print(bottom_x1, left_x2)
+        else:
+            # fixme so if coef1 is really small, we should not be dividing by it
+            # so now we need to find the line in terms of x2 instead of x1
+            # which means I need to be careful about what order I add these points to data
+            # to make sure that the point with the larger x1 value is added first...
+            top_x2 = np.percentile(x[:, 1], 80)
+            bottom_x2 = np.percentile(x[:, 1], 20)
+            print(list(x[:,1]))
+            right_x1 = -(coef[1] * top_x2 + intercept) / coef[0]
+            left_x1 = -(coef[1] * bottom_x2 + intercept) / coef[0]
 
-        x = np.vstack((x, np.array([top, right_x2])))
-        x = np.vstack((x, np.array([bottom, left_x2])))
+            print("0>1")
+            print(right_x1, top_x2)
+            print(left_x1, bottom_x2)
+
+            # I need to add the right most x1 first to be consistent with rest of code
+            if right_x1 > left_x1:
+                x = np.vstack((x, np.array([right_x1, top_x2])))
+                x = np.vstack((x, np.array([left_x1, bottom_x2])))
+            else:
+                x = np.vstack((x, np.array([left_x1, bottom_x2])))
+                x = np.vstack((x, np.array([right_x1, top_x2])))
+
+        # # print(top, right_x2, bottom, left_x2)
+        # print("coef", mod.coef_)
+        # print("intercept", mod.intercept_)
+
         x = [x[:,0], x[:,1]]
+        print("\n\n")
+
 
     return x, y
 
@@ -386,7 +438,7 @@ configure(app, InteractiveGraph)
 def main():
     # replace this with taking in data irl
     global model
-    model = "linear"  # logistic or linear, eventually make this a button, make this easier to change
+    model = "logistic"  # logistic or linear, eventually make this a button, make this easier to change
 
     x, y = generate_data()
 
