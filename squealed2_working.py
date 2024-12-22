@@ -106,35 +106,64 @@ def make_plot(data):
         x_handlebars = [x[0][-1], x[0][-2]]
         y_handlebars = [y[-1], y[-2]]
 
+        # plotting the handlebars
+        points_on_line_trace = plotly.graph_objects.Scatter(
+            x=x_handlebars, y=y_handlebars,
+            mode='markers', name='Handlebars',
+            marker=dict(color='red', size=10)  # Customizing color and size
+        )
+
+        fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
+
     elif model == "logistic":
         color = resids  # because this is margins... hopefully
         # plotting what we were given...
+
+        # want y labels to be conveyed by shapes
+        symbol_map = {-1: "circle", 1: "cross"}
+        class_1 = [x[0][0:-2][y == -1], x[1][0:-2][y == -1]]
+        class_2 = [x[0][0:-2][y == 1], x[1][0:-2][y == 1]]
+
+        # class_1_points = plotly.graph_objects.Scatter(x=class_1[0], y=class_1[1], mode='markers',
+        #                                              marker=dict(symbol="circle", color=color, colorscale="portland",
+        #                                                          colorbar=dict(title="Margins", x=1.1, y=.5,
+        #                                                                        len=.5)), name='Class 1')
+        #
+        # class_2_points = plotly.graph_objects.Scatter(x=class_2[0], y=class_2[1], mode='markers',
+        #                                               marker=dict(symbol="cross", color=color, colorscale="portland",
+        #                                                           colorbar=dict(title="Margins", x=1.1, y=.5,
+        #                                                                         len=.5)), name='Class 2')
+
         scatter_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=x[1][0:-2], mode='markers',
-                                                     marker=dict(symbol=y, color=color, colorscale="portland",
+                                                     marker=dict(symbol=np.vectorize(symbol_map.get)(y), color=color, colorscale="portland",
                                                                  colorbar=dict(title="Margins", x=1.1, y=.5,
                                                                                len=.5)), name='Data Points')
         best_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
         x_handlebars = [x[0][-1], x[0][-2]]
         y_handlebars = [x[1][-1], x[1][-2]]
 
+        # plotting the handlebars
+        points_on_line_trace = plotly.graph_objects.Scatter(
+            x=x_handlebars, y=y_handlebars,
+            mode='markers', name='Handlebars',
+            marker=dict(color='red', size=10)  # Customizing color and size
+        )
 
-    # plotting the handlebars
-    points_on_line_trace = plotly.graph_objects.Scatter(
-        x=x_handlebars, y=y_handlebars,
-        mode='markers', name='Handlebars',
-        marker=dict(color='red', size=10)  # Customizing color and size
-    )
+        # fig = plotly.graph_objects.Figure(data=[class_1_points, class_2_points, best_fit_trace, points_on_line_trace])
+        fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
 
 
-    fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
+
     fig.update_layout(title="Data")
 
     return json.loads(pio.to_json(fig))
 
 
 def make_prog_chart(coef, likelihood):
-    temp = [go.Scatter(x=coef[1], y=coef[0], mode="lines+markers", marker=dict(color=likelihood, colorscale="Viridis", colorbar=dict(title= "Approx Log Likelihood", x=1.1, y=.5, len=.5)))]
-    layout = go.Layout(title="Coefficients Tried", xaxis_title="Intercept", yaxis_title="Slope")
+    size_list = np.ones(len(likelihood)) * 10
+    size_list[-1] = 25
+    temp = [go.Scatter(x=coef[1], y=coef[0], mode="lines+markers", marker=dict(size= size_list, color=likelihood, colorscale="Viridis", colorbar=dict(title= "Approx Log Likelihood", x=1.1, y=.5, len=.5)), name="Tries")]
+    layout = go.Layout(title="Coefficients Tried (Current Try Larger)", xaxis_title="Intercept", yaxis_title="Slope")
     fig = go.Figure(data=temp, layout=layout)
     return json.loads(pio.to_json(fig))
 
@@ -371,11 +400,11 @@ def generate_data():
 
         rng = np.random.default_rng()
         cluster1 = np.random.normal(loc=[locations[0], locations[0]], size=(15,2)) # for 2d
-        label1 = rng.choice(a= np.array([0, 1]), size=15, p= [.90, .10])
-        print(locations)
+        label1 = rng.choice(a= np.array([-1, 1]), size=15, p= [.90, .10])
+
 
         cluster2 = np.random.normal(loc=[locations[1], locations[1]], size=(15,2)) # for 2d
-        label2 = rng.choice(a= [0, 1], size=15, p= [.2, .8])
+        label2 = rng.choice(a= [-1, 1], size=15, p= [.2, .8])
 
         x = np.vstack((cluster1, cluster2))
         y = np.hstack((label1, label2)).ravel()
@@ -404,7 +433,6 @@ def generate_data():
             # to make sure that the point with the larger x1 value is added first...
             top_x2 = np.percentile(x[:, 1], 80)
             bottom_x2 = np.percentile(x[:, 1], 20)
-            print(list(x[:,1]))
             right_x1 = -(coef[1] * top_x2 + intercept) / coef[0]
             left_x1 = -(coef[1] * bottom_x2 + intercept) / coef[0]
 
