@@ -41,6 +41,7 @@ def line_fit(points):
     start = (0,0)
     stop = (0,0)
     global model  # fixme, if change this to a state later, pass that in
+    # I actually think we can avoid this by doing points[0], points[1], and points[2], no?
     if model == "linear":
         start = (x[0][-1], y[-1])
         stop = (x[0][-2], y[-2])
@@ -64,8 +65,7 @@ def line_fit(points):
         resids = y - best_fit_line
     elif model == "logistic":
         best_fit_line = coef[0] * x[0] + coef[1]
-        resids = y * (x[1][0:-2] - coef[0] * x[0][0:-2] - coef[1]) / (coef[0]**2 + 1)**.5  # this is actually margins
-
+        resids = y * (x[1][0:-2] - coef[0] * x[0][0:-2] - coef[1]) / (coef[0] ** 2 + 1) ** .5  # this is actually margins
 
     # old code...
     # # this is currently just linear regression, but could potentially change this to be more fancy?
@@ -167,12 +167,19 @@ def make_prog_chart(coef, likelihood):
     fig = go.Figure(data=temp, layout=layout)
     return json.loads(pio.to_json(fig))
 
-def log_likelihood(resids):
-    resid_squared = resids**2
-    rss = resid_squared.sum()
-    resid_var = np.var(resids, ddof=2)
-    n = len(resids)
-    return -n / 2 * np.log(2 * math.pi * resid_var) - rss / (2 * resid_var)
+def log_likelihood(resids, y = None):
+    global model
+
+    if model == "linear":
+        resid_squared = resids**2
+        rss = resid_squared.sum()
+        resid_var = np.var(resids, ddof=2)
+        n = len(resids)
+        return -n / 2 * np.log(2 * math.pi * resid_var) - rss / (2 * resid_var)
+    elif model == "logistic":
+        log_out = 1 / (1 + np.exp(-resids))  # recall for logistic, "resids" are actually the margins
+        return np.sum(((1 + y)/ 2) * np.log(log_out) + ((1 - y)/ 2) * np.log(1- log_out))
+
 
 # @component
 # def LineChart():
@@ -190,7 +197,7 @@ def InteractiveGraph():
     # in addition to graphing the data, we will also keep track of the lines tried so far
     try_list = [[coef[0]], [coef[1]]]
     tries, set_tries = hooks.use_state(try_list)
-    likelihood_list = [log_likelihood(resid)]
+    likelihood_list = [log_likelihood(resid, data[-1])]  # added the data[-1] for the labels on logistic regression, is unused for linear
     likelihood, set_likelihood = hooks.use_state(likelihood_list)
     graph_temp = make_prog_chart(tries, likelihood)
 
@@ -238,19 +245,30 @@ def InteractiveGraph():
 
 
     def update_point(all_points, point, dx, dy):
+        # this update is fine for 1d linear or 2d logistic!
         new_points = all_points[:]
         new_points[0][-point] += dx
         new_points[1][-point] += dy
 
         # okay what pitch should we do?
         line, resids, coef = line_fit(new_points)
-        resid_squared = resids**2
-        temp = resid_squared.sum()
-        if temp > 3500:  # figure out what the max error should be?, if you even need that...
-            temp = 3500
+
+        temp = []
+        global model
+        if model == "linear":
+            temp = resids**2
+            maxErr = 3500
+        elif model == "logistic":
+            temp = resids[resids < 0]  # bad margins
+            maxErr = 800  # what is a reasonable error for this?
+
+        temp = temp ** 2  # okay so like this, I'm squaring the bad margins. I probably don't need to...
+        temp = temp.sum()
+
+        if temp > maxErr:
+            temp = maxErr
         minHz = 300
         maxHz = 1200
-        maxErr = 3500
         new_pitch =  minHz + (temp / maxErr) * (maxHz - minHz)
 
         return new_points, new_pitch, coef, resids
@@ -314,7 +332,7 @@ def InteractiveGraph():
                 # trying something
                 # set_tries(temp_tries)  # update the states
                 set_pitch(new_pitch)
-                set_likelihood(likelihood + [log_likelihood(resids)])
+                set_likelihood(likelihood + [log_likelihood(resids, new_points[-1])])  # again, only need the labels for logistic, unused for linear
 
         except WebSocketDisconnect as e:
             print("closed window caught by handler for reason {e.reason}")
@@ -360,6 +378,7 @@ def InteractiveGraph():
                         "min": 0,
                         "max": 10,  # fixme, make more dynamic?
                         "value": step,
+                        "step": .25,
                         "onInput": handle_slider_change,
                     }),  html.span(f"Value: {step}"),
             ),
@@ -423,9 +442,9 @@ def generate_data():
             left_x2 = -(coef[0] * bottom_x1 + intercept) / coef[1]
             x = np.vstack((x, np.array([top_x1, right_x2])))
             x = np.vstack((x, np.array([bottom_x1, left_x2])))
-            print("1>0")
-            print(top_x1, right_x2)
-            print(bottom_x1, left_x2)
+            # print("1>0")
+            # print(top_x1, right_x2)
+            # print(bottom_x1, left_x2)
         else:
             # fixme so if coef1 is really small, we should not be dividing by it
             # so now we need to find the line in terms of x2 instead of x1
@@ -436,9 +455,9 @@ def generate_data():
             right_x1 = -(coef[1] * top_x2 + intercept) / coef[0]
             left_x1 = -(coef[1] * bottom_x2 + intercept) / coef[0]
 
-            print("0>1")
-            print(right_x1, top_x2)
-            print(left_x1, bottom_x2)
+            # print("0>1")
+            # print(right_x1, top_x2)
+            # print(left_x1, bottom_x2)
 
             # I need to add the right most x1 first to be consistent with rest of code
             if right_x1 > left_x1:
