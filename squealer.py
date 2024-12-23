@@ -189,8 +189,7 @@ def log_likelihood(resids, y = None):
         n = len(resids)
         return -n / 2 * np.log(2 * math.pi * resid_var) - rss / (2 * resid_var)
     elif model == "logistic":
-        log_out = 1 / (1 + np.exp(-resids))  # recall for logistic, "resids" are actually the margins
-        return np.sum(((1 + y)/ 2) * np.log(log_out) + ((1 - y)/ 2) * np.log(1- log_out))
+        return np.sum(-np.log(1 + np.exp(-resids)))
 
 
 # @component
@@ -431,7 +430,7 @@ def generate_data():
 
         rng = np.random.default_rng()
         cluster1 = np.random.normal(loc=[locations[0], locations[0]], size=(15,2)) # for 2d
-        label1 = rng.choice(a= np.array([-1, 1]), size=15, p= [.90, .10])
+        label1 = rng.choice(a= np.array([-1, 1]), size=15, p= [.9, .1])
 
 
         cluster2 = np.random.normal(loc=[locations[1], locations[1]], size=(15,2)) # for 2d
