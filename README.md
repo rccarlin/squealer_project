@@ -26,17 +26,24 @@ Currently, the mode of the model (whether we're performing a linear or logistic 
 must be changed within the code; I hope to add a button so that the models can be switched within the dashboard.
 
 ### What's Inside?
-This code uses ReactPy to make the user interface and Plotly (and json) to make the graphs; the starting/ best models 
+This code uses ReactPy to make the user interface (UI) and Plotly (and json) to make the graphs; the starting/ best models 
 are found with NumPy's polyfit function or sklearn's linear Logistic Regression package (depending on if you are 
 performing linear or logistic regression, respectively). The data is generated using Numpy random functionss, but I hope,
 in the future, the program can be modified to accept user-inputted data.
 
-### whats next?
-make model more flexible?
-advance the game?
-switch from plotly to something more reactive like d3, hopefully to do drag and drop
-auto focus
-bigger models?
+### Next Steps
+Short term, I would like users to be able to switch between model types or even generate new data via buttons within the 
+dashboard instead of having to modify the code internally or stop and rerun the program. There were also technical
+difficulties surrounding auto play and html focus; Google would not allow tones to be played before a "user gesture on 
+the page," even though the tone does not play until after a key is pressed to move a handlebar... Furthermore, I have not
+figured out a way to ensure that pressing the keys will always move the handlebars, even after interacting with a different
+part of the screen (but I feel like there should be some sort of focus override that would allow this). Initially, I had 
+really hoped to use drag and drop instead of key presses, but that proved quite difficult with the necessary calculations
+and Plotly redrawings; D3 has more dynamic user-interaction capabilities, so it might make sense to switch to D3 in the future. 
+
+Aside from those UI issues, other next steps include allowing for user-inputted data, higher dimensional data (though that
+begs the question, how can we visualize that space in a way that's intuitive for moving a model around?), or non-linear models. 
+
 
 
 
