@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 import sys
 import math
 from sklearn.linear_model import LogisticRegression
+import random
 import pandas as pd
 
 
@@ -34,20 +35,22 @@ def line_fit(points):
 
     # okay so the handlebars have already been fit to the line, so can't we just extract those points to make a line and then calculate loss...
 
-    # if model is linear, the handlebars are in x[0] and y
-    # and if it's logistic, it's in x[0] and x[1], I believe...
-
     # get the handlebars so we can draw a line between them
-    start = (0,0)
-    stop = (0,0)
+
     global model  # fixme, if change this to a state later, pass that in
-    # I actually think we can avoid this by doing points[0], points[1], and points[2], no?
-    if model == "linear":
-        start = (x[0][-1], y[-1])
-        stop = (x[0][-2], y[-2])
-    elif model == "logistic":
-        start = (x[0][-1], x[1][-1])
-        stop = (x[0][-2], x[1][-2])
+
+    # if model is linear, the handlebars are in x[0] and y (which is points[1])
+    # and if it's logistic, it's in x[0] and x[1] (points[0] and points[1])
+    start = (points[0][-1], points[1][-1])
+    stop = (points[0][-2], points[1][-2])
+
+    # if model == "linear":
+    #     start = (x[0][-1], y[-1])
+    #     stop = (x[0][-2], y[-2])
+    # elif model == "logistic":
+    #     start = (x[0][-1], x[1][-1])
+    #     stop = (x[0][-2], x[1][-2])
+
 
     # now we have a line
     slope = (stop[1] - start[1]) / (stop[0] - start[0])
@@ -92,8 +95,8 @@ def make_plot(data):
     y = data[-1]
 
     best_fit_line, resids, coef = line_fit(data)
-    x_handlebars = []
-    y_handlebars = []
+    x_handlebars = [data[0][-1], data[0][-2]]
+    y_handlebars = [data[1][-1], data[1][-2]]
     symbol_map = {-1: "circle", 1: "cross"}
 
 
@@ -104,48 +107,24 @@ def make_plot(data):
                                                      marker=dict(color=color, colorscale="portland",
                                                                  colorbar=dict(title="Residual Squared", x=1.1, y=.5,
                                                                                len=.5)), name='Data Points')
-        best_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
-        x_handlebars = [x[0][-1], x[0][-2]]
-        y_handlebars = [y[-1], y[-2]]
-
-        # # plotting the handlebars
-        # points_on_line_trace = plotly.graph_objects.Scatter(
-        #     x=x_handlebars, y=y_handlebars,
-        #     mode='markers', name='Handlebars',
-        #     marker=dict(color='red', size=10)  # Customizing color and size
-        # )
-        #
-        # fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
+        # x_handlebars = [x[0][-1], x[0][-2]]
+        # y_handlebars = [y[-1], y[-2]]
 
     elif model == "logistic":
-        color = resids  # because this is margins... hopefully
+        color = resids  # because this is margins
         # plotting what we were given...
 
         # want y labels to be conveyed by shapes
-
-        class_1 = [x[0][0:-2][y == -1], x[1][0:-2][y == -1]]
-        class_2 = [x[0][0:-2][y == 1], x[1][0:-2][y == 1]]
-
-        # class_1_points = plotly.graph_objects.Scatter(x=class_1[0], y=class_1[1], mode='markers',
-        #                                              marker=dict(symbol="circle", color=color, colorscale="portland",
-        #                                                          colorbar=dict(title="Margins", x=1.1, y=.5,
-        #                                                                        len=.5)), name='Class 1')
-        #
-        # class_2_points = plotly.graph_objects.Scatter(x=class_2[0], y=class_2[1], mode='markers',
-        #                                               marker=dict(symbol="cross", color=color, colorscale="portland",
-        #                                                           colorbar=dict(title="Margins", x=1.1, y=.5,
-        #                                                                         len=.5)), name='Class 2')
-
         scatter_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=x[1][0:-2], mode='markers',
                                                      marker=dict(symbol=np.vectorize(symbol_map.get)(y), color=color, colorscale="portland",
                                                                  colorbar=dict(title="Margins", x=1.1, y=.5,
-                                                                               len=.5)), name = "w", showlegend=False)
+                                                                               len=.5)), name="Data",showlegend=False)
 
-        x_handlebars = [x[0][-1], x[0][-2]]
-        y_handlebars = [x[1][-1], x[1][-2]]
+        # x_handlebars = [x[0][-1], x[0][-2]]
+        # y_handlebars = [x[1][-1], x[1][-2]]
 
 
-    # both types of models need the original line and a current line
+    # both types of models need the original line and a current line and handlebars
     global og_fit_line
     og_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=og_fit_line, mode='lines', name='Original Fit Line')
     curr_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=best_fit_line, mode='lines', name='Current Fit Line')
@@ -160,13 +139,13 @@ def make_plot(data):
     fig = plotly.graph_objects.Figure(data=[scatter_trace, curr_fit_trace, og_fit_trace, points_on_line_trace])
     fig.update_layout(title="Data")
 
-    if model == "logistic":
+    if model == "logistic":  # add lables for the different symbols
         for label in symbol_map:
             fig.add_trace(go.Scatter(
                 x=[None], y=[None],  # No data points, just for the legend
                 mode='markers',
-                marker=dict(symbol=symbol_map[label], color='red'),  # Transparent color
-                name=f"Data with Y = {label}",  # Name in the legend
+                marker=dict(symbol=symbol_map[label], color='red'),
+                name=f"Data with Y = {label}",
             ))
 
     return json.loads(pio.to_json(fig))
@@ -179,6 +158,7 @@ def make_prog_chart(coef, likelihood):
     layout = go.Layout(title="Coefficients Tried (Current Try Larger)", xaxis_title="Intercept", yaxis_title="Slope")
     fig = go.Figure(data=temp, layout=layout)
     return json.loads(pio.to_json(fig))
+
 
 def log_likelihood(resids, y = None):
     global model
@@ -271,7 +251,7 @@ def InteractiveGraph():
             maxErr = 3500
         elif model == "logistic":
             temp = resids[resids < 0]  # bad margins
-            maxErr = 800  # what is a reasonable error for this?
+            maxErr = 150  # what is a reasonable error for this?
 
         temp = temp ** 2  # okay so like this, I'm squaring the bad margins. I probably don't need to...
         temp = temp.sum()
@@ -287,14 +267,11 @@ def InteractiveGraph():
 
     # Handle keypress events
     def handle_key_down(event):
-        try:
-            # print(f"Key pressed: {event['key']}")
+        try:  # fixme you can get rid of this
             nonlocal pitch
 
-            # 1 so I can use -1 to get the 20th percentile, etc
-
             pressed = False
-            point = 0
+            point = 0  # 1 so I can use -1 to get the 20th percentile, or 2 so I'll have -2...
             dx = 0
             dy = 0
             # print(step)
@@ -362,9 +339,9 @@ def InteractiveGraph():
                 }})();
                 """)
 
+
     def handle_slider_change(event):
         set_step(event["target"]["value"])
-
 
 
     return html.div(
@@ -397,24 +374,14 @@ def InteractiveGraph():
         ]
     )
 
-# @app.post("/disconnect-endpoint")
-# async def disconnect_endpoint(request: Request):
-#     try:
-#         out = await request.json()
-#         reason = out.get("reason", "Unknown reason")
-#         print(f"Client disconnected with reason: {reason}")
-#         # Handle any additional logic here, like cleanup or logging
-#         return JSONResponse(status_code=200, content={"message": "Disconnect handled"})
-#     except Exception as e:
-#         raise HTTPException(status_code=400, detail="Invalid request data")
-#
 
 def generate_data():
     global model
 
     if model == "linear":
         x = np.random.uniform(0, 10, 30)
-        y = 2 * x + np.random.uniform(-3, 3, 30)
+        m = np.random.uniform(-3, 3)
+        y = m * x + np.random.uniform(-3, 3, 30)
 
         # fit line and add handle bars
         coef =  np.polyfit(x, y, 1)
@@ -431,7 +398,6 @@ def generate_data():
         rng = np.random.default_rng()
         cluster1 = np.random.normal(loc=[locations[0], locations[0]], size=(15,2)) # for 2d
         label1 = rng.choice(a= np.array([-1, 1]), size=15, p= [.9, .1])
-
 
         cluster2 = np.random.normal(loc=[locations[1], locations[1]], size=(15,2)) # for 2d
         label2 = rng.choice(a= [-1, 1], size=15, p= [.2, .8])
@@ -453,9 +419,6 @@ def generate_data():
             left_x2 = -(coef[0] * bottom_x1 + intercept) / coef[1]
             x = np.vstack((x, np.array([top_x1, right_x2])))
             x = np.vstack((x, np.array([bottom_x1, left_x2])))
-            # print("1>0")
-            # print(top_x1, right_x2)
-            # print(bottom_x1, left_x2)
         else:
             # fixme so if coef1 is really small, we should not be dividing by it
             # so now we need to find the line in terms of x2 instead of x1
@@ -466,10 +429,6 @@ def generate_data():
             right_x1 = -(coef[1] * top_x2 + intercept) / coef[0]
             left_x1 = -(coef[1] * bottom_x2 + intercept) / coef[0]
 
-            # print("0>1")
-            # print(right_x1, top_x2)
-            # print(left_x1, bottom_x2)
-
             # I need to add the right most x1 first to be consistent with rest of code
             if right_x1 > left_x1:
                 x = np.vstack((x, np.array([right_x1, top_x2])))
@@ -478,15 +437,9 @@ def generate_data():
                 x = np.vstack((x, np.array([left_x1, bottom_x2])))
                 x = np.vstack((x, np.array([right_x1, top_x2])))
 
-        # # print(top, right_x2, bottom, left_x2)
-        # print("coef", mod.coef_)
-        # print("intercept", mod.intercept_)
-
         x = [x[:,0], x[:,1]]
 
-
     return x, y
-
 
 
 configure(app, InteractiveGraph)
