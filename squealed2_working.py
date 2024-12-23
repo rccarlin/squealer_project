@@ -23,7 +23,7 @@ import pandas as pd
 
 global data
 global model
-# i would like to be coding mostly in python as I'm much more comfortable with it, so can I only use javascript for the noises?
+global og_fit_line
 
 app = FastAPI()
 
@@ -67,6 +67,7 @@ def line_fit(points):
         best_fit_line = coef[0] * x[0] + coef[1]
         resids = y * (x[1][0:-2] - coef[0] * x[0][0:-2] - coef[1]) / (coef[0] ** 2 + 1) ** .5  # this is actually margins
 
+
     # old code...
     # # this is currently just linear regression, but could potentially change this to be more fancy?
     # # want to put extra weight on the two handlebars
@@ -93,6 +94,7 @@ def make_plot(data):
     best_fit_line, resids, coef = line_fit(data)
     x_handlebars = []
     y_handlebars = []
+    symbol_map = {-1: "circle", 1: "cross"}
 
 
     if model == "linear":
@@ -106,21 +108,21 @@ def make_plot(data):
         x_handlebars = [x[0][-1], x[0][-2]]
         y_handlebars = [y[-1], y[-2]]
 
-        # plotting the handlebars
-        points_on_line_trace = plotly.graph_objects.Scatter(
-            x=x_handlebars, y=y_handlebars,
-            mode='markers', name='Handlebars',
-            marker=dict(color='red', size=10)  # Customizing color and size
-        )
-
-        fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
+        # # plotting the handlebars
+        # points_on_line_trace = plotly.graph_objects.Scatter(
+        #     x=x_handlebars, y=y_handlebars,
+        #     mode='markers', name='Handlebars',
+        #     marker=dict(color='red', size=10)  # Customizing color and size
+        # )
+        #
+        # fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
 
     elif model == "logistic":
         color = resids  # because this is margins... hopefully
         # plotting what we were given...
 
         # want y labels to be conveyed by shapes
-        symbol_map = {-1: "circle", 1: "cross"}
+
         class_1 = [x[0][0:-2][y == -1], x[1][0:-2][y == -1]]
         class_2 = [x[0][0:-2][y == 1], x[1][0:-2][y == 1]]
 
@@ -138,23 +140,34 @@ def make_plot(data):
                                                      marker=dict(symbol=np.vectorize(symbol_map.get)(y), color=color, colorscale="portland",
                                                                  colorbar=dict(title="Margins", x=1.1, y=.5,
                                                                                len=.5)), name='Data Points')
-        best_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
+
         x_handlebars = [x[0][-1], x[0][-2]]
         y_handlebars = [x[1][-1], x[1][-2]]
 
-        # plotting the handlebars
-        points_on_line_trace = plotly.graph_objects.Scatter(
-            x=x_handlebars, y=y_handlebars,
-            mode='markers', name='Handlebars',
-            marker=dict(color='red', size=10)  # Customizing color and size
-        )
 
-        # fig = plotly.graph_objects.Figure(data=[class_1_points, class_2_points, best_fit_trace, points_on_line_trace])
-        fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
+    # both types of models need the original line and a current line
+    global og_fit_line
+    og_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=og_fit_line, mode='lines', name='Original Fit Line')
+    curr_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=best_fit_line, mode='lines', name='Current Fit Line')
+    # plotting the handlebars
+    points_on_line_trace = plotly.graph_objects.Scatter(
+        x=x_handlebars, y=y_handlebars,
+        mode='markers', name='Handlebars',
+        marker=dict(color='red', size=10)  # Customizing color and size
+    )
 
-
-
+    # fig = plotly.graph_objects.Figure(data=[class_1_points, class_2_points, best_fit_trace, points_on_line_trace])
+    fig = plotly.graph_objects.Figure(data=[scatter_trace, curr_fit_trace, og_fit_trace, points_on_line_trace])
     fig.update_layout(title="Data")
+
+    if model == "logistic":
+        for label in symbol_map:
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],  # No data points, just for the legend
+                mode='markers',
+                marker=dict(symbol=symbol_map[label], color='red'),  # Transparent color
+                name=f"Label {label}",  # Name in the legend
+            ))
 
     return json.loads(pio.to_json(fig))
 
@@ -169,7 +182,6 @@ def make_prog_chart(coef, likelihood):
 
 def log_likelihood(resids, y = None):
     global model
-
     if model == "linear":
         resid_squared = resids**2
         rss = resid_squared.sum()
@@ -256,7 +268,7 @@ def InteractiveGraph():
         temp = []
         global model
         if model == "linear":
-            temp = resids**2
+            temp = resids
             maxErr = 3500
         elif model == "logistic":
             temp = resids[resids < 0]  # bad margins
@@ -358,7 +370,7 @@ def InteractiveGraph():
 
     return html.div(
         [
-            html.div({"id": "plot1", "style": {"width": "600px", "height": "400px"}}),
+            html.div({"id": "plot1", "style": {"width": "800px", "height": "600px"}}),
             html.div({"id": "plot2", "style": {"width": "600px", "height": "400px"}}),
             html.script(script),  # JavaScript to load Plotly and render the chart
             html.div({
@@ -472,7 +484,6 @@ def generate_data():
         # print("intercept", mod.intercept_)
 
         x = [x[:,0], x[:,1]]
-        print("\n\n")
 
 
     return x, y
@@ -485,7 +496,7 @@ configure(app, InteractiveGraph)
 def main():
     # replace this with taking in data irl
     global model
-    model = "logistic"  # logistic or linear, eventually make this a button, make this easier to change
+    model = "linear"  # logistic or linear, eventually make this a button, make this easier to change
 
     x, y = generate_data()
 
@@ -494,6 +505,10 @@ def main():
     # functions assume the data comes in the form of [x1, x2, ..., y]
     data = x
     data.append(y)
+
+    line, _, _ = line_fit(data)
+    global og_fit_line
+    og_fit_line = line
 
     uvicorn.run(app, host="127.0.0.1", port=8000)
     # run(InteractiveGraph)
