@@ -28,7 +28,7 @@ must be changed within the code; I hope to add a button so that the models can b
 ### What's Inside?
 This code uses ReactPy to make the user interface (UI) and Plotly (and json) to make the graphs; the starting/ best models 
 are found with NumPy's polyfit function or sklearn's linear Logistic Regression package (depending on if you are 
-performing linear or logistic regression, respectively). The data is generated using Numpy random functionss, but I hope,
+performing linear or logistic regression, respectively). The data is generated using Numpy random functions, but I hope,
 in the future, the program can be modified to accept user-inputted data.
 
 ### Next Steps
