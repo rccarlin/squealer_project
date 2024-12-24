@@ -3,6 +3,7 @@ import plotly
 import plotly.io as pio
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from reactpy.svg import marker
 from scipy import stats
 import json
 from reactpy import component, html, run, use_ref, use_effect, hooks
@@ -10,106 +11,174 @@ from reactpy.backend.fastapi import configure
 import uvicorn
 from fastapi.responses import JSONResponse
 import plotly.graph_objs as go
+from contextlib import asynccontextmanager
+import sys
 import math
+from sklearn.linear_model import LogisticRegression
+import random
+import pandas as pd
 
 global data
+global model
+global og_fit_line
 
 app = FastAPI()
 
-# calculate the line, return yhats and loss
-def line_fit(points):
-    x = points[0:-1][0]
+
+# takes in the data (including handle bars), finds the line/ coefficients defined by the handle bars
+# also returns the "residuals" which are residuals for linear regression but are signed margins for logistic regression
+def line_fit(points, is_linear):
+    # print(points)
+
+    x = points[0:-1]
     y = points[-1]
 
-    # this is currently just linear regression, but could potentially change this to be more fancy?
-    # want to put extra weight on the two handlebars
-    weights = np.ones_like(x)
-    # make the line really want to be with handlebars
-    weights[-1] = 100  # maybe change this if too crazy
-    weights[-2] = 100
-    # or maybe do legrange to get it through your points...
-    coef = np.polyfit(x, y, 1, w=weights)  # can change degree to be bigger to fit fancier...
+    # global model  # fixme, if change this to a state later, pass that in
 
-    best_fit_line = coef[0] * np.array(x) + coef[1]
-    # resid_squared = (y - best_fit_line) ** 2
-    resids = y - best_fit_line
+    # step one: make a line with the handlebars
+    # (in previous iterations, I used weights to ensure the line stayed with the handlebars. That is unnecessary for
+    # these simple linear examples, but just an idea for when expanding to more complicated models...)
+    # if model is linear, the handlebars are in x[0] and y (which is points[1])
+    # and if it's logistic, it's in x[0] and x[1] (points[0] and points[1])
+    start = (points[0][-1], points[1][-1])
+    stop = (points[0][-2], points[1][-2])
 
-    return best_fit_line, resids, coef
+    # now we can find the line
+    slope = (stop[1] - start[1]) / (stop[0] - start[0])
+    intercept = start[1] - slope * start[0]
+
+    coef = [slope, intercept]  # this is based off of the np.polyfit coef returns, where intercept is last
+
+    # step two: calculate fit statistic (residuals or signed margins)
+    resids = 0
+    fit_line = list()
+    if is_linear:
+        fit_line = coef[0] * np.array(x[0]) + coef[1]
+        resids = y - fit_line  # residuals
+    else:
+        fit_line = coef[0] * x[0] + coef[1]
+        resids = y * (x[1][0:-2] - coef[0] * x[0][0:-2] - coef[1]) / (coef[0] ** 2 + 1) ** .5  # signed margins
+
+    return fit_line, resids, coef
 
 
-def make_plot(data):
-    # assumes that the handlebars are added to the bottom
-
-    x = data[0:-1][0]  # fixme make tuples!!!
+# takes in all data (with handle bars at the end) to plot the data points, handle bars, original best fit line, and the
+# current line defined by the handlebars
+def make_plot(data, is_linear):
+    x = data[0:-1]
     y = data[-1]
 
-    best_fit_line, resids, _ = line_fit(data)
-    resid_squared = resids ** 2
-    # plotting what we were given...
-    scatter_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=y[0:-2], mode='markers',
-                                                 marker=dict(color=resid_squared, colorscale="Viridis",
-                                                             colorbar=dict(title="Residual Squared", x=1.1, y=.5,
-                                                                           len=.5)), name='Data Points')
-    best_fit_trace = plotly.graph_objects.Scatter(x=x[0:-2], y=best_fit_line, mode='lines', name='Best Fit Line')
+    fit_line, resids, _ = line_fit(data, is_linear)
 
-    # the handlebars were added in main and are the last two points
-    x_handlebars = [x[-1], x[-2]]
-    y_handlebars = [y[-1], y[-2]]
+    # handlebars will be plotted separately so they can stand out
+    x_handlebars = [data[0][-1], data[0][-2]]
+    y_handlebars = [data[1][-1], data[1][-2]]
+    symbol_map = {-1: "circle", 1: "cross"}  # this is needed for plotting the labels for logistic regression but is
+    # currently outside of the if statement because it's used again after the figure is made...
 
-    # plotting
-    points_on_line_trace = plotly.graph_objects.Scatter(
-        x=x_handlebars, y=y_handlebars,
-        mode='markers', name='Handle Bars',
-        marker=dict(color='red', size=10)  # Customizing color and size
-    )
+    if is_linear:
+        color = resids ** 2  # the color of the points will be the residual squared
+        scatter_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=y[0:-2], mode='markers', marker=dict(color=color,
+                                                                                                          colorscale="portland",
+                                                                                                          colorbar=dict(
+                                                                                                              title="Residual Squared",
+                                                                                                              x=1.1,
+                                                                                                              y=.5,
+                                                                                                              len=.5)),
+                                                     name='Data Points')
+    else:
+        color = resids  # the color of the points is just their signed margin
 
-    fig = plotly.graph_objects.Figure(data=[scatter_trace, best_fit_trace, points_on_line_trace])
+        # want y labels to be conveyed by shapes
+        scatter_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=x[1][0:-2], mode='markers',
+                                                     marker=dict(symbol=np.vectorize(symbol_map.get)(y), color=color,
+                                                                 colorscale="portland",
+                                                                 colorbar=dict(title="Margins", x=1.1,
+                                                                               y=.5, len=.5)), name="Data Points",
+                                                     showlegend=False)
 
-    # Add click event handling in Plotly to play a sound when a point is clicked
-    # fig.update_layout(clickmode='event+select')
+    # both types of models need the original line, a current line, and handlebars
+    # global og_fit_line
+    # og_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=og_fit_line, mode='lines', name='Original Fit Line')
+    curr_fit_trace = plotly.graph_objects.Scatter(x=x[0][0:-2], y=fit_line, mode='lines', name='Current Fit Line')
+
+    # plotting the handlebars
+    points_on_line_trace = plotly.graph_objects.Scatter(x=x_handlebars, y=y_handlebars, mode='markers',
+                                                        name='Handlebars', marker=dict(color='red', size=10))
+
+    # making the figure with all of the scatter traces
+    fig = plotly.graph_objects.Figure(data=[scatter_trace, curr_fit_trace, points_on_line_trace])  # og_fit_trace,
+    fig.update_layout(title="Data")
+
+    if not is_linear:  # add labels for the different symbols
+        for label in symbol_map:
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],  # No data points, just for the legend
+                mode='markers',
+                marker=dict(symbol=symbol_map[label], color='red'),
+                name=f"Data with Y = {label}",
+            ))
 
     return json.loads(pio.to_json(fig))
 
 
+# plots the intercepts and slopes of the model/ lines attempted so far, color is determined by the model's log likelihood
 def make_prog_chart(coef, likelihood):
-    temp = [go.Scatter(x=coef[1], y=coef[0], mode="markers", marker=dict(color=likelihood, colorscale="Viridis",
-                                                                         colorbar=dict(title="Approx Log Likelihood",
-                                                                                       x=1.1, y=.5,
-                                                                                       len=.5)))]  # fixme, this and the other one, what are the color arguments...
-    layout = go.Layout(title="Coefficients Tried", xaxis_title="Intercept", yaxis_title="Slope")
+    # make the current/ most recent point bigger
+    size_list = np.ones(len(likelihood)) * 10
+    size_list[-1] = 25
+
+    # plot the attempts
+    temp = [go.Scatter(x=coef[1], y=coef[0], mode="lines+markers", marker=dict(size=size_list, color=likelihood,
+                                                                               colorscale="Viridis", colorbar=dict(
+            title="Approx Log Likelihood", x=1.1, y=.5, len=.5)),
+                       name="Tries")]
+    layout = go.Layout(title="Coefficients Tried (Current Try Larger)", xaxis_title="Intercept", yaxis_title="Slope")
     fig = go.Figure(data=temp, layout=layout)
+
     return json.loads(pio.to_json(fig))
 
 
-def log_likelihood(resids):
-    resid_squared = resids ** 2
-    rss = resid_squared.sum()
-    resid_var = np.var(resids, ddof=2)
-    n = len(resids)
-    return -n / 2 * np.log(2 * math.pi * resid_var) - rss / (2 * resid_var)
+# calculates the log likelihood of the current model using the residuals or margins
+def log_likelihood(resids, is_linear):
+    if is_linear:
+        resid_squared = resids ** 2
+        rss = resid_squared.sum()
+        resid_var = np.var(resids, ddof=2)
+        n = len(resids)
+        return -n / 2 * np.log(2 * math.pi * resid_var) - rss / (2 * resid_var)
+    else:
+        return np.sum(-np.log(1 + np.exp(-resids)))
 
 
-# @component
-# def LineChart():
-#     line_chart_html = make_line_chart()
-#     return html.div(dangerously_set_inner_html=line_chart_html)
-
+# this component facilitates the plotting, updating, and replotting of data. Events such as key presses, sliders,
+# and tones played are also handled here
 @component
 def InteractiveGraph():
     global data
+    global model
 
+    # declare states (akin to global variables but for the UI specifically)
     points, set_points = hooks.use_state(data)  # data
     pitch, set_pitch = hooks.use_state(440)  # tone
-    graph_json = make_plot(points)
-    best_fit_line, resid, coef = line_fit(data)
+    is_linear, set_is_linear = hooks.use_state(model)  # model type
 
-    # in addition to graphing the data, we will also keep track of the lines tried so far
-    try_list = [[coef[0]], [coef[1]]]
-    tries, set_tries = hooks.use_state(try_list)
-    likelihood_list = [log_likelihood(resid)]
-    likelihood, set_likelihood = hooks.use_state(likelihood_list)
+    _, resid, coef = line_fit(data, is_linear)  # need these to populate the initial tries and likelihoods
+
+    # try_list = [[coef[0]], [coef[1]]]
+    tries, set_tries = hooks.use_state([[coef[0]], [coef[1]]])  # the slope and intercepts tried so far
+    # likelihood_list = [log_likelihood(resid)]
+    likelihood, set_likelihood = hooks.use_state(
+        [log_likelihood(resid, is_linear)])  # log likelihood of model tried so far
+
+    # adjust stepsize
+    step, set_step = hooks.use_state(.25)
+
+    # create the plots
+    graph_json = make_plot(points, is_linear)
     graph_temp = make_prog_chart(tries, likelihood)
 
+    # this script is the html to actually display the graphs and prepare for key presses
     script = f'''
             function renderPlot() {{
                 console.log("Rendering Plotly graph...");
@@ -149,127 +218,217 @@ def InteractiveGraph():
             // pywebview.api.handle_keypress(event.key);
         }});'''
 
-    def update_point(all_points, point, dx, dy, freq):
-        new_points = all_points[:]
-        new_points[0][-point] += dx
-        new_points[1][-point] += dy
+    # takes in the points, the index  (from the end) of the handlebar being updated, and the target handlebar's change
+    # in x and y (or x1 and x2, in the case of logistic regression)
+    # this could probably be rewritten to not need all points passed in, but this way has worked so far
+    def update_point(all_points, index, dx, dy):
 
-        # okay what pitch should we do?
-        line, resids, coef = line_fit(new_points)
-        resid_squared = resids ** 2
-        temp = resid_squared.sum()
-        if temp > 3500:  # figure out what the max error should be?, if you even need that...
-            temp = 3500
+        # this update is fine for 1d linear or 2d logistic!
+        new_points = all_points[:]
+        new_points[0][-index] += dx
+        new_points[1][-index] += dy
+
+        # calculate the residuals/ margins to determine the tone
+        _, resids, _ = line_fit(new_points, is_linear)
+
+        if is_linear:
+            temp = resids
+            maxErr = 3500  # for these synthetic examples, residuals are often much higher than the bad margins...
+        else:
+            temp = resids[resids < 0]  # bad margins
+            maxErr = 100  # what is a reasonable error for this?
+
+        temp = temp ** 2
+        temp = temp.sum()  # this gets the rss or the sum of squared bad margins
+
+        # if the range of possible error statistics is too large, then the change in tones may not be noticeable...
+        if temp > maxErr:
+            temp = maxErr
         minHz = 300
         maxHz = 1200
-        maxErr = 3500
-        new_pitch =  minHz + (temp / maxErr) * (maxHz - minHz)
+        new_pitch = minHz + (temp / maxErr) * (maxHz - minHz)  # scales the pitch to be between 300 and 1200 Hz
 
         return new_points, new_pitch, coef, resids
 
-    # Handle keypress events
+    # Looks for arrow key or wasd presses and calls update_point() accordingly
     def handle_key_down(event):
-        try:
-            # print(f"Key pressed: {event['key']}")
-            nonlocal pitch
+        nonlocal pitch
 
-            # 1 so I can use -1 to get the 20th percentile, etc
-            delta = .5  # fixme, customize, always be positive
+        pressed = False
+        index = 0  # will either have a value of 1 (left handlebar) or 2 (right handlebar)
+        dx = 0
+        dy = 0
+        delta = float(step)  # makes it so the amount changed (dx or dy) is determined by the step size, which is
+        # determined by the slider
 
-            pressed = False
-            point = 0
-            dx = 0
-            dy = 0
-            freq = pitch
+        # for each of the valid key presses, sets index and change in x or y (never both) to intended value
+        # also sets pressed to True so that and update and redraw only happens when a handlebar is moved
+        if event["key"] == "ArrowUp":
+            index = 2
+            dy = delta
+            pressed = True
+        elif event["key"] == "ArrowDown":
+            index = 2
+            dy = -delta
+            pressed = True
+        elif event["key"] == "ArrowLeft":
+            index = 2
+            dx = -delta
+            pressed = True
+        elif event["key"] == "ArrowRight":
+            index = 2
+            dx = delta
+            pressed = True
+        elif event["key"] == "w":
+            index = 1
+            dy = delta
+            pressed = True
+        elif event["key"] == "a":
+            index = 1
+            dx = -delta
+            pressed = True
+        elif event["key"] == "s":
+            index = 1
+            dy = -delta
+            pressed = True
+        elif event["key"] == "d":
+            index = 1
+            dx = delta
+            pressed = True
 
-            if event["key"] == "ArrowUp":
-                point = 2
-                dy = delta
-                pressed = True
-            elif event["key"] == "ArrowDown":
-                point = 2
-                dy = -delta
-                pressed = True
-            elif event["key"] == "ArrowLeft":
-                point = 2
-                dx = -delta
-                pressed = True
-            elif event["key"] == "ArrowRight":
-                point = 2
-                dx = delta
-                pressed = True
-            elif event["key"] == "w":
-                point = 1
-                dy = delta
-                pressed = True
-            elif event["key"] == "a":
-                point = 1
-                dx = -delta
-                pressed = True
-            elif event["key"] == "s":
-                point = 1
-                dy = -delta
-                pressed = True
-            elif event["key"] == "d":
-                point = 1
-                dx = delta
-                pressed = True
+        if pressed:
+            # updates points, the tries, and the pitch
+            new_points, new_pitch, coef, resids = update_point(points, index, dx, dy)
 
-            if pressed:
-                new_points, new_pitch, coef, resids = update_point(points, point, dx, dy, freq)
+            temp_tries = tries[:]
+            temp_tries[0].append(coef[0])
+            temp_tries[1].append(coef[1])
 
-                temp_tries = tries[:]
-                temp_tries[0].append(coef[0])
-                temp_tries[1].append(coef[1])
+            set_pitch(new_pitch)
+            set_likelihood(likelihood + [
+                log_likelihood(resids, is_linear)])  # again, only need the labels for logistic, unused for linear
 
-                # trying something
-                # set_tries(temp_tries)  # update the states
-                set_pitch(new_pitch)
-                set_likelihood(likelihood + [log_likelihood(resids)])
-
-        except WebSocketDisconnect as e:
-            print("closed window caught by handler for reason {e.reason}")
-
-
-    def play_tone(loss):
+    # plays a short tone at the given frequency (which will be some function of residuals/ margins)
+    def play_tone(err):
         return html.script(
             f"""
                 (function() {{
                     const audio = new AudioContext();
                     const oscillator = audio.createOscillator();
-                    oscillator.frequency.value = {loss};
+                    oscillator.frequency.value = {err};
                     oscillator.connect(audio.destination);
                     oscillator.start();
                     setTimeout(() => oscillator.stop(), 200);
                 }})();
                 """)
 
+    # updates the step size according to changes with the slider
+    def handle_slider_change(event):
+        set_step(event["target"]["value"])
+
+    # this function resets the data, tone, model attempts, etc. as it switches to/ from a linear/ logistic model
+    def switch_modes(event=None):
+        set_is_linear(lambda prev: not prev)
+        temp = not is_linear  # state doesn't get updated right away, so for the rest of the function let's use this
+
+        # now that I've switched models, I need new data...
+        x, y = generate_data(temp)
+        global data
+        # print(data)
+        data = x
+        data.append(y)  # fixme should this be within generate_data()...
+        set_points(data)
+
+        # getting the starting line so we can always plot it as a baseline
+        fit_line, resids, coef = line_fit(data, temp)
+        global og_fit_line
+        og_fit_line = fit_line
+
+        # reset all of the trackers
+        set_pitch(440)
+        set_likelihood([log_likelihood(resids, temp)])
+        set_tries([[coef[0]], [coef[1]]])
+
+    # the component returns the html necessary to display the graphs, handle key presses and sliders, and play tone
     return html.div(
         [
-            html.div({"id": "plot1", "style": {"width": "600px", "height": "400px"}}),
-            html.div({"id": "plot2", "style": {"width": "600px", "height": "400px"}}),
+            html.div({"id": "plot1", "style": {"width": "800px", "height": "600px"}}),
             html.script(script),  # JavaScript to load Plotly and render the chart
             html.div({
                 "tabIndex": 0,  # Makes the div focusable to receive key events
                 "autofocus": True,
                 "onKeyDown": handle_key_down,  # Attach the keydown event listener
                 "style": {"border": "1px solid black", "padding": "10px", "width": "300px"}
-            },"Use the Arrow keys and WASD to adjust the line to find a better fit!"),
+            }, "Use Arrow Keys to adjust the line from the right, and WASD to adjust from the left."),
+            html.div(
+                {
+                    "style": {"display": "flex", "alignItems": "center", "gap": "10px"}
+                },
+                "Slider: ",
+                html.input(
+                    {
+                        "type": "range",
+                        "min": 0,
+                        "max": 10,  # fixme, make more dynamic?
+                        "value": step,
+                        "step": .25,
+                        "onInput": handle_slider_change,
+                    }), html.span(f"Value: {step}"),
+            ),
+            html.div({"id": "plot2", "style": {"width": "800px", "height": "600px"}}),
+            html.button(
+                {"onClick": switch_modes,
+                 "style": {"fontSize": "20px"}, },
+                "Linear" if not is_linear else "Logistic",
+            ),
             play_tone(pitch)
         ]
     )
 
 
-@app.post("/disconnect-endpoint")
-async def disconnect_endpoint(request: Request):
-    try:
-        out = await request.json()
-        reason = out.get("reason", "Unknown reason")
-        print(f"Client disconnected with reason: {reason}")
-        # Handle any additional logic here, like cleanup or logging
-        return JSONResponse(status_code=200, content={"message": "Disconnect handled"})
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid request data")
+# returns random (x, y) data for linear regression and random (x1, x2, y) data for logistic regression
+def generate_data(is_linear):
+    if is_linear:
+        # make data
+        x = np.random.uniform(0, 10, 30)
+        m = np.random.uniform(-3, 3)
+        y = m * x + np.random.uniform(-3, 3, 30)
+
+        # put semi-random handlebars
+        top = np.percentile(x, 80)  # putting the handlebars on the 80th and 20th percentile x values
+        bottom = np.percentile(x, 20)
+        x = [np.append(x, [top, bottom])]
+        y_start = np.random.uniform(np.percentile(y, 0), np.percentile(y, 100), 2)
+        y = np.append(y, y_start)
+
+    else:
+        locations = [np.random.uniform(-3, -1), np.random.uniform(1, 3)]  # where will the clusters be?
+        # right now, the clusters will have similar x1 and x2 values, but that can be changed by having different
+        # random numbers for x1 center and x2 center
+
+        # creates clusters and assigns labels (for now, only small % chance of having a different label than your
+        # cluster mates... this can easily be edited to make the task easier or harder)
+        rng = np.random.default_rng()
+        cluster1 = np.random.normal(loc=[locations[0], locations[0]], size=(15, 2))
+        label1 = rng.choice(a=np.array([-1, 1]), size=15, p=[.9, .1])
+
+        cluster2 = np.random.normal(loc=[locations[1], locations[1]], size=(15, 2))
+        label2 = rng.choice(a=[-1, 1], size=15, p=[.2, .8])
+
+        # put the clusters together
+        x = np.vstack((cluster1, cluster2))
+        y = np.hstack((label1, label2)).ravel()
+
+        # random handlebars
+        top_x1 = np.percentile(x[:, 0], 80)  # again doing 80th and 20th percentile of x(1)
+        bottom_x1 = np.percentile(x[:, 0], 20)
+        x2_points = np.random.uniform(np.percentile(x[:, 1], 0), np.percentile(x[:, 1], 100), 2)
+        x = np.vstack((x, np.array([top_x1, x2_points[0]])))
+        x = np.vstack((x, np.array([bottom_x1, x2_points[1]])))
+
+        x = [x[:, 0], x[:, 1]]  # this is done so that the ending dataset with be [x1, x2, y]
+
+    return x, y
 
 
 configure(app, InteractiveGraph)
@@ -277,30 +436,21 @@ configure(app, InteractiveGraph)
 
 # runs the program
 def main():
-    # replace this with taking in data irl
-    x = np.random.uniform(0, 10, 20)
-    y = 2 * x + np.random.uniform(-3, 3, 20)
-
-    # fixme another model, logistic
-
-    # want to find initial handlebars
-    slope, intercept, _, _, _ = stats.linregress(x, y)  # replace with target model
-
-    top = np.percentile(x, 80)
-    bottom = np.percentile(x, 20)
-    y_start = np.random.uniform(np.percentile(y, 0), np.percentile(y, 100), 2)
-    x = np.append(x, [top, bottom])
-    y = np.append(y, y_start)
+    global model
+    model = True
+    x, y = generate_data(model)  # what model type to start with
 
     global data
-    data = np.array([x, y])
-    # data = zip(x, y)
+    # functions assume the data comes in the form of [x1, x2, ..., y]
+    data = x
+    data.append(y)
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
-    # run(InteractiveGraph)
+    # getting the starting line so we can always plot it as a baseline
+    line, _, _ = line_fit(data, model)
+    global og_fit_line
+    og_fit_line = line
 
-    # Run the application
-    # run(GraphWithSoundControl)
+    uvicorn.run(app, host="127.0.0.1", port=8000)  # runs the component
 
 
 main()

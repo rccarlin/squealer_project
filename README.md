@@ -1,5 +1,5 @@
 ### What is the Squealer?
-The Squealer is an accessibility and educational tool designed to allow the user to adjust the fitted line of a simple 
+The Squealer is an accessibility and educational tool designed to allow users to adjust the fitted line of a simple 
 (1D) linear regression problem or the separating line of a 2D logistic regression task. As the line gets moved around the space, the user 
 receives visual and audio feedback regarding the quality of the new fit. In the case of linear regression,
 the color of a point is its residual squared, while the frequency of the pitch corresponds to the residual sum of squares, 
@@ -20,9 +20,7 @@ held down or are otherwise pressed "too close together," the program may hang, s
 somewhat avoided by adjusting the step-size of the handlebars. The amount the
 handlebars move on each click can be adjusted by the slider in the middle (but after you adjust the slider, click on the
 instruction text box to "refocus" the code, or else the program will not know if you are trying to interact with the 
-slider or graph). As the model line updates, so too will the coefficient tracking graph at the bottom of the screen. 
-
-At the bottom of the screen is a button to toggle between a linear and a logistic regression, new data is generated each time.
+slider or graph). As the model line updates, so too will the coefficient tracking graph. At the bottom of the screen is a button to toggle between a linear and a logistic regression, new data is generated each time.
 
 ### What's Inside?
 This code uses ReactPy to make the user interface (UI) and Plotly (and json) to make the graphs; the starting/ best models 
@@ -41,6 +39,11 @@ it might make sense to switch to D3 in the future.
 
 Aside from those UI issues, other next steps include allowing for user-inputted data, higher-dimensional data (though that
 begs the question, how can we visualize that space in a way that's intuitive for moving a model around?), or non-linear models. 
+
+#### Squealer Game
+For fun, I modified the squealer code so that the user gets no "good" baseline model and
+instead has to look for a reasonable line themselves. It could be an entertaining avenue to go down, especially if we add a scoring
+system or time constraints.
 
 
 
