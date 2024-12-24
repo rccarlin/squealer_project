@@ -27,11 +27,13 @@ app = FastAPI()
 
 # takes in the data (including handle bars), finds the line/ coefficients defined by the handle bars
 # also returns the "residuals" which are residuals for linear regression but are signed margins for logistic regression
-def line_fit(points):
+def line_fit(points, is_linear):
+    # print(points)
+
     x = points[0:-1]
     y = points[-1]
 
-    global model  # fixme, if change this to a state later, pass that in
+    # global model  # fixme, if change this to a state later, pass that in
 
     # step one: make a line with the handlebars
     # (in previous iterations, I used weights to ensure the line stayed with the handlebars. That is unnecessary for
@@ -50,10 +52,10 @@ def line_fit(points):
     # step two: calculate fit statistic (residuals or signed margins)
     resids = 0
     fit_line = list()
-    if model == "linear":
+    if is_linear:
         fit_line = coef[0] * np.array(x[0]) + coef[1]
         resids = y - fit_line  # residuals
-    elif model == "logistic":
+    else:
         fit_line = coef[0] * x[0] + coef[1]
         resids = y * (x[1][0:-2] - coef[0] * x[0][0:-2] - coef[1]) / (coef[0] ** 2 + 1) ** .5  # signed margins
 
@@ -62,11 +64,11 @@ def line_fit(points):
 
 # takes in all data (with handle bars at the end) to plot the data points, handle bars, original best fit line, and the
 # current line defined by the handlebars
-def make_plot(data):
+def make_plot(data, is_linear):
     x = data[0:-1]
     y = data[-1]
 
-    fit_line, resids, _ = line_fit(data)
+    fit_line, resids, _ = line_fit(data, is_linear)
 
     # handlebars will be plotted separately so they can stand out
     x_handlebars = [data[0][-1], data[0][-2]]
@@ -74,14 +76,12 @@ def make_plot(data):
     symbol_map = {-1: "circle", 1: "cross"}  # this is needed for plotting the labels for logistic regression but is
     # currently outside of the if statement because it's used again after the figure is made...
 
-    global model  # again, change this if model is a state/ passed in
-    if model == "linear":
+    if is_linear:
         color = resids**2  # the color of the points will be the residual squared
         scatter_trace = plotly.graph_objects.Scatter(x= x[0][0:-2], y= y[0:-2], mode= 'markers', marker= dict(color= color,
                                                         colorscale= "portland", colorbar= dict(title= "Residual Squared",
                                                         x= 1.1, y= .5, len= .5)), name= 'Data Points')
-
-    elif model == "logistic":
+    else:
         color = resids  # the color of the points is just their signed margin
 
         # want y labels to be conveyed by shapes
@@ -104,7 +104,7 @@ def make_plot(data):
     fig = plotly.graph_objects.Figure(data= [scatter_trace, curr_fit_trace, og_fit_trace, points_on_line_trace])
     fig.update_layout(title= "Data")
 
-    if model == "logistic":  # add labels for the different symbols
+    if not is_linear:  # add labels for the different symbols
         for label in symbol_map:
             fig.add_trace(go.Scatter(
                 x= [None], y= [None],  # No data points, just for the legend
@@ -133,15 +133,14 @@ def make_prog_chart(coef, likelihood):
 
 
 # calculates the log likelihood of the current model using the residuals or margins
-def log_likelihood(resids):
-    global model
-    if model == "linear":
+def log_likelihood(resids, is_linear):
+    if is_linear:
         resid_squared = resids**2
         rss = resid_squared.sum()
         resid_var = np.var(resids, ddof=2)
         n = len(resids)
         return -n / 2 * np.log(2 * math.pi * resid_var) - rss / (2 * resid_var)
-    elif model == "logistic":
+    else:
         return np.sum(-np.log(1 + np.exp(-resids)))
 
 
@@ -150,23 +149,26 @@ def log_likelihood(resids):
 @component
 def InteractiveGraph():
     global data
+    global model
 
     # declare states (akin to global variables but for the UI specifically)
     points, set_points = hooks.use_state(data)  # data
     pitch, set_pitch = hooks.use_state(440)  # tone
+    is_linear, set_is_linear = hooks.use_state(model)  # model type
 
-    _, resid, coef = line_fit(data)  # need these to populate the initial tries and likelihoods
+    _, resid, coef = line_fit(data, is_linear)  # need these to populate the initial tries and likelihoods
 
     # try_list = [[coef[0]], [coef[1]]]
     tries, set_tries = hooks.use_state([[coef[0]], [coef[1]]])  # the slope and intercepts tried so far
     # likelihood_list = [log_likelihood(resid)]
-    likelihood, set_likelihood = hooks.use_state([log_likelihood(resid)])  # log likelihood of model tried so far
+    likelihood, set_likelihood = hooks.use_state([log_likelihood(resid, is_linear)])  # log likelihood of model tried so far
+
 
     # adjust stepsize
     step, set_step = hooks.use_state(.25)
 
     # create the plots
-    graph_json = make_plot(points)
+    graph_json = make_plot(points, is_linear)
     graph_temp = make_prog_chart(tries, likelihood)
 
     # this script is the html to actually display the graphs and prepare for key presses
@@ -221,15 +223,14 @@ def InteractiveGraph():
         new_points[1][-index] += dy
 
         # calculate the residuals/ margins to determine the tone
-        _, resids, _ = line_fit(new_points)
+        _, resids, _ = line_fit(new_points, is_linear)
 
-        global model
-        if model == "linear":
+        if is_linear:
             temp = resids
             maxErr = 3500  # for these synthetic examples, residuals are often much higher than the bad margins...
-        elif model == "logistic":
+        else:
             temp = resids[resids < 0]  # bad margins
-            maxErr = 150  # what is a reasonable error for this?
+            maxErr = 100  # what is a reasonable error for this?
 
         temp = temp ** 2
         temp = temp.sum()  # this gets the rss or the sum of squared bad margins
@@ -299,7 +300,7 @@ def InteractiveGraph():
             temp_tries[1].append(coef[1])
 
             set_pitch(new_pitch)
-            set_likelihood(likelihood + [log_likelihood(resids)])  # again, only need the labels for logistic, unused for linear
+            set_likelihood(likelihood + [log_likelihood(resids, is_linear)])  # again, only need the labels for logistic, unused for linear
 
 
     # plays a short tone at the given frequency (which will be some function of residuals/ margins)
@@ -320,6 +321,30 @@ def InteractiveGraph():
     # updates the step size according to changes with the slider
     def handle_slider_change(event):
         set_step(event["target"]["value"])
+
+    # this function resets the data, tone, model attempts, etc. as it switches to/ from a linear/ logistic model
+    def switch_modes(event=None):
+        set_is_linear(lambda prev: not prev)
+        temp = not is_linear  # state doesn't get updated right away, so for the rest of the function let's use this
+
+        # now that I've switched models, I need new data...
+        x, y = generate_data(temp)
+        global data
+        # print(data)
+        data = x
+        data.append(y)  #fixme should this be within generate_data()...
+        set_points(data)
+
+        # getting the starting line so we can always plot it as a baseline
+        fit_line, resids, coef = line_fit(data, temp)
+        global og_fit_line
+        og_fit_line = fit_line
+
+        # reset all of the trackers
+        set_pitch(440)
+        set_likelihood([log_likelihood(resids, temp)])
+        set_tries([[coef[0]], [coef[1]]])
+
 
     # the component returns the html necessary to display the graphs, handle key presses and sliders, and play tone
     return html.div(
@@ -348,16 +373,19 @@ def InteractiveGraph():
                     }),  html.span(f"Value: {step}"),
             ),
             html.div({"id": "plot2", "style": {"width": "600px", "height": "400px"}}),
+            html.button(
+                {"onClick": switch_modes,
+                "style": {"fontSize": "20px"},},
+                "Linear" if not is_linear else "Logistic",
+            ),
             play_tone(pitch)
         ]
     )
 
 
 # returns random (x, y) data for linear regression and random (x1, x2, y) data for logistic regression
-def generate_data():
-    global model
-
-    if model == "linear":
+def generate_data(is_linear):
+    if is_linear:
         # make data
         x = np.random.uniform(0, 10, 30)
         m = np.random.uniform(-3, 3)
@@ -374,7 +402,7 @@ def generate_data():
         x = [np.append(x, [top, bottom])]
         y = np.append(y, [slope * top + intercept, slope * bottom + intercept])
 
-    elif model == "logistic":
+    else:
         locations = [np.random.uniform(-3, -1), np.random.uniform(1,3)]  # where will the clusters be?
         # right now, the clusters will have similar x1 and x2 values, but that can be changed by having different
         # random numbers for x1 center and x2 center
@@ -432,9 +460,8 @@ configure(app, InteractiveGraph)
 # runs the program
 def main():
     global model
-    model = "logistic"  # logistic or linear, eventually make this a button, make this easier to change
-
-    x, y = generate_data()
+    model = True
+    x, y = generate_data(model)  # what model type to start with
 
     global data
     # functions assume the data comes in the form of [x1, x2, ..., y]
@@ -442,7 +469,7 @@ def main():
     data.append(y)
 
     # getting the starting line so we can always plot it as a baseline
-    line, _, _ = line_fit(data)
+    line, _, _ = line_fit(data, model)
     global og_fit_line
     og_fit_line = line
 
