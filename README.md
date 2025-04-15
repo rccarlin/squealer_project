@@ -1,5 +1,5 @@
 ### What is the Squealer?
-The Squealer is an accessibility and educational tool designed to help users to interactively explore regression modela. In its current version, the Squealer supports a simple (1D) linear regression task and a 2D logistic regression task. Users can adjust the curve by moving the two "handlebars" on the graph and receive both visual and audio feedback on the quality of their proposed fit. In the case of linear regression,
+The Squealer is an accessibility and educational tool designed to help users to interactively explore regression models. In its current version, the Squealer supports a simple (1D) linear regression task and a 2D logistic regression task. Users can adjust the curve by moving the two "handlebars" on the graph and receive both visual and audio feedback on the quality of their proposed fit. In the case of linear regression,
 the color of a point represents its residual squared, while the frequency of the pitch corresponds to the residual sum of squares, with higher pitches being worse. 
 For logistic regression, the shape of the point signifies its true classification and the color
 is its distance from the line (more explicitly, the color is determined by the signed margin, so large positive values 
