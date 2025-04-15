@@ -14,7 +14,7 @@ import random
 import csv
 import io
 
-# Global variables for storing the current dataset, model mode, and the original best-fit line.
+# global variables for storing the current dataset, model mode, and the original best-fit line
 global data
 global model
 global og_fit_line
@@ -26,7 +26,6 @@ app = FastAPI()
 # takes in the data (including handle bars), finds the line/ coefficients defined by the handle bars
 # also returns the "residuals" which are residuals for linear regression but are signed margins for logistic regression
 def line_fit(points, is_linear):
-
 
     if is_linear:
         x_all = points[0]
@@ -49,7 +48,7 @@ def line_fit(points, is_linear):
     
     # logistic mode
     else:
-        # points = [x_all, y_all] (1d x, prob y)
+        # points = [x_all, y_all] (1-d x, probability y)
         x_all = points[0]
         y_all = points[1]
 
@@ -57,7 +56,7 @@ def line_fit(points, is_linear):
         x_main = x_all[:-2]
         y_main = y_all[:-2]
 
-        #  define the logistic curve from handlebars
+        # define the logistic curve from handlebars
         x1, x2 = x_all[-2], x_all[-1]
         y1, y2 = y_all[-2], y_all[-1]
 
@@ -65,7 +64,7 @@ def line_fit(points, is_linear):
         beta1 = (logit(y2) - logit(y1)) / (x2 - x1)
         beta0 = logit(y1) - beta1 * x1
 
-        # generate a dense set of x-values over the main data range
+        # generate a set of x-values over the main data range
         x_line = np.linspace(np.min(x_main), np.max(x_main), 100)
         y_line = 1/(1+np.exp(-(beta0 + beta1*x_line)))
         fit_line = [x_line, y_line]
@@ -112,7 +111,7 @@ def make_plot(data, is_linear):
             mode='lines',
             name='Current Fit Line'
         )
-        # the two handlebar points.
+        # take out the two handlebar points
         handlebars_trace = go.Scatter(
             x=[x_all[-1], x_all[-2]],
             y=[y_all[-1], y_all[-2]],
@@ -120,7 +119,7 @@ def make_plot(data, is_linear):
             name='Handlebars',
             marker=dict(color='red', size=10)
         )
-        # plot the original best-fit line based on handlebars (fixed)
+        # plot the original best-fit line based on handlebars (this line is fixed)
         og_fit_trace = go.Scatter(
             x=x_main_list,
             y=og_fit_line.tolist() if isinstance(og_fit_line, np.ndarray) else og_fit_line,
@@ -166,6 +165,8 @@ def make_plot(data, is_linear):
             mode='lines',
             name='Original Logistic Curve'
         )
+
+        # takes out the handlebars
         handlebars_trace = go.Scatter(
             x=[x_all[-1], x_all[-2]],
             y=[y_all[-1], y_all[-2]],
@@ -220,26 +221,26 @@ def play_tone(err_val):
     quality = max(0, min(quality, 1))
     base_freq = 880
 
-    # Define two sets of intervals (as multipliers):
-    # "Harmonic" chord for good fits (perfect fifth and octave)
+    # "harmonic" chord for good fits (perfect fifth and octave)
     harmonic_intervals = [1.0, 1.5, 2.0]  
-    # "Dissonant" chord for poor fits (less consonant intervals)
+
+    # "dissonant" chord for poor fits (less consonant intervals)
     dissonant_intervals = [1.0, 1.1, 1.2] 
 
-    # Interpolate between the two sets based on quality
+    # something in between the two sets based on quality
     intervals = []
     for h, d in zip(harmonic_intervals, dissonant_intervals):
-        # When quality=1, choose h; when quality=0, choose d.
+
+        # quality=1, choose h; quality=0, choose d.
         intervals.append(d + (h - d) * quality)
     
-    # Calculate the frequencies for each oscillator
+    # calculate the frequencies for each oscillator
     freqs = [base_freq * mult for mult in intervals]
 
-    # The duration of the tone in milliseconds
+    # duration of the tone in milliseconds
     duration_ms = 200
 
-    # Build the JavaScript that creates multiple oscillators
-    # to play the chord simultaneously.
+    # build js code that creates multiple oscillators to play the chord simultaneously
     js = f"""
     (function() {{
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -400,7 +401,6 @@ def InteractiveGraph():
             dx = delta
             pressed = True
 
-
         if pressed:
             # updates points, the tries, and the pitch
             new_points, new_err, new_coef, new_resids = update_point(points, index, dx, dy)
@@ -521,7 +521,6 @@ def InteractiveGraph():
         play_tone(pitch)
     ])
 
-
 # returns random (x, y) data for linear regression and random (x1, x2, y) data for logistic regression
 def generate_data(is_linear):
     if is_linear:
@@ -567,21 +566,21 @@ def generate_data(is_linear):
         # compute fitted probabilities from logistic regression model
         y_fit = 1 / (1 + np.exp(-(mod.intercept_[0] + mod.coef_[0][0] * x)))
 
-        # Choose handlebars at the 20th and 80th percentiles.
+        # choose handlebars at the 20th and 80th percentiles
         bottom = np.percentile(x, 20)
         top = np.percentile(x, 80)
 
-        # Compute handlebar y-values on the true logistic curve.
+        # compute the handlebar y-values on the true logistic curve
         y_bottom = 1 / (1 + np.exp(-(mod.intercept_[0] + mod.coef_[0][0] * bottom)))
         y_top = 1 / (1 + np.exp(-(mod.intercept_[0] + mod.coef_[0][0] * top)))
 
-        # Append the handlebar points in increasing x order.
+        # append the handlebar points in increasing x order
         x_full = np.append(x, [top, bottom])
         y_full = np.append(noisy_probs, [y_top, y_bottom])
         return [x_full, y_full]
 
 def logit(p):
-    # no division by 0!
+    # no division by 0! so we clip to fit within range for logistic regression
     p = np.clip(p, 1e-6, 1-1e-6)
     return np.log(p/(1-p))
 
@@ -707,7 +706,6 @@ async def get_data():
         "model": model,
         "og_fit_line": og_fit_line_json
     }
-
 
 configure(app, InteractiveGraph)
 
