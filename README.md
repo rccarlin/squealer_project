@@ -1,9 +1,7 @@
 ### What is the Squealer?
-The Squealer is an accessibility and educational tool designed to allow users to adjust the fitted line of a simple 
-(1D) linear regression problem or the separating line of a 2D logistic regression task. As the line gets moved around the space, the user 
-receives visual and audio feedback regarding the quality of the new fit. In the case of linear regression,
-the color of a point is its residual squared, while the frequency of the pitch corresponds to the residual sum of squares, 
-with higher pitches being worse. For logistic regression, the shape of the point signifies its true classification and the color
+The Squealer is an accessibility and educational tool designed to help users to interactively explore regression modela. In its current version, the Squealer supports a simple (1D) linear regression task and a 2D logistic regression task. Users can adjust the curve by moving the two "handlebars" on the graph and receive both visual and audio feedback on the quality of their proposed fit. In the case of linear regression,
+the color of a point represents its residual squared, while the frequency of the pitch corresponds to the residual sum of squares, with higher pitches being worse. 
+For logistic regression, the shape of the point signifies its true classification and the color
 is its distance from the line (more explicitly, the color is determined by the signed margin, so large positive values 
 are good while negative values are a sign of misclassification). The tone played for logistic regression is a sum of 
 squared margins of the misclassified data points (so a higher pitch is still worse). 
@@ -25,8 +23,9 @@ slider or graph). As the model line updates, so too will the coefficient trackin
 ### What's Inside?
 This code uses ReactPy to make the user interface (UI) and Plotly (and json) to make the graphs; the starting/ best models 
 are found with NumPy's polyfit function or sklearn's linear Logistic Regression package (depending on if you are 
-performing linear or logistic regression, respectively). The data is generated using Numpy random functions, but I hope,
-in the future, the program can be modified to accept user-inputted data.
+performing linear or logistic regression, respectively). The data is generated using Numpy random functions, but there is now an option for the program to accept user-inputted data in csv format. The program currently expects a two 
+column csv file, x and y. For the linear mode, this is understood as simply x and y values. For the 
+logistic mode, x is seen as a continuous variable and y is understood as probabilities. 
 
 ### Next Steps
 There were technical difficulties surrounding auto play and html focus; Google would not allow tones to be played 
@@ -37,7 +36,7 @@ that would allow this). Initially, I had really hoped to use drag and drop inste
 difficult with the necessary calculations and Plotly redrawings; D3 has more dynamic user-interaction capabilities, so 
 it might make sense to switch to D3 in the future. 
 
-Aside from those UI issues, other next steps include allowing for user-inputted data, higher-dimensional data (though that
+Aside from those UI issues, other next steps include allowing for user-inputted data in other formats, higher-dimensional data (though that
 begs the question, how can we visualize that space in a way that's intuitive for moving a model around?), or non-linear models. 
 
 #### Squealer Game
