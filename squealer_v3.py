@@ -303,6 +303,51 @@ def InteractiveGraph():
         document.head.appendChild(plotlyScript);
     """)
 
+
+    # add file input elements and upload button 
+    file_upload_ui = html.div([
+        html.div("Upload your CSV file:"),
+        html.input({"type": "file", "id": "csvFileInput"}),
+        html.button({"id": "uploadCsvButton"}, "Upload CSV"),
+        html.div({"id": "uploadMsg"})
+    ])
+    
+    # js to handle the file upload
+    upload_script = html.script(f"""
+    (function(){{
+    const fileInput = document.getElementById('csvFileInput');
+    const uploadButton = document.getElementById('uploadCsvButton');
+    const uploadMsg = document.getElementById('uploadMsg');
+    uploadButton.addEventListener('click', function(){{
+        if (fileInput.files.length === 0){{
+            uploadMsg.innerText = 'Please select a file first.';
+            return;
+        }}
+        const file = fileInput.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        // Use the current mode from the ReactPy state.
+        formData.append('mode', JSON.stringify({str(is_linear).lower()}));
+        fetch('/upload_csv', {{
+            method: 'POST',
+            body: formData
+        }})
+        .then(response => {{
+            if (!response.ok) throw new Error("Upload failed");
+            return response.json();
+        }})
+        .then(data => {{
+            uploadMsg.innerText = 'Upload successful! Reloading data...';
+            setTimeout(() => window.location.reload(), 1000);
+        }})
+        .catch(error => {{
+            console.error(error);
+            uploadMsg.innerText = 'Upload error: ' + error;
+        }});
+    }});
+}})();
+""")
+
     # takes in the points, the index  (from the end) of the handlebar being updated, and the target handlebar's change
     # in x and y (or x1 and x2, in the case of logistic regression)
     # this could probably be rewritten to not need all points passed in, but this way has worked so far
@@ -443,55 +488,17 @@ def InteractiveGraph():
         # update coefficient tracking
         set_tries([[coef_new[0]], [coef_new[1]]])
 
-    # add file input elements and upload button 
-    file_upload_ui = html.div([
-        html.div("Upload your CSV file:"),
-        html.input({"type": "file", "id": "csvFileInput"}),
-        html.button({"id": "uploadCsvButton"}, "Upload CSV"),
-        html.div({"id": "uploadMsg"})
-    ])
-    
-    # js to handle the file upload
-    upload_script = html.script(f"""
-    (function(){{
-    const fileInput = document.getElementById('csvFileInput');
-    const uploadButton = document.getElementById('uploadCsvButton');
-    const uploadMsg = document.getElementById('uploadMsg');
-    uploadButton.addEventListener('click', function(){{
-        if (fileInput.files.length === 0){{
-            uploadMsg.innerText = 'Please select a file first.';
-            return;
-        }}
-        const file = fileInput.files[0];
-        const formData = new FormData();
-        formData.append('file', file);
-        // Use the current mode from the ReactPy state.
-        formData.append('mode', JSON.stringify({str(is_linear).lower()}));
-        fetch('/upload_csv', {{
-            method: 'POST',
-            body: formData
-        }})
-        .then(response => {{
-            if (!response.ok) throw new Error("Upload failed");
-            return response.json();
-        }})
-        .then(data => {{
-            uploadMsg.innerText = 'Upload successful! Reloading data...';
-            setTimeout(() => window.location.reload(), 1000);
-        }})
-        .catch(error => {{
-            console.error(error);
-            uploadMsg.innerText = 'Upload error: ' + error;
-        }});
-    }});
-}})();
-""")
-
     # the component returns the html necessary to display the graphs, handle key presses and sliders, and play tone
     return html.div([
         file_upload_ui,
         upload_script,
-        html.div({"id": "plot1", "style": {"width": "800px", "height": "600px"}}),
+        html.div(
+            {"style": {"display": "flex", "gap": "20px", "alignItems": "flex-start"}},
+            [
+                html.div({"id": "plot1", "style": {"width": "800px", "height": "600px"}}),
+                html.div({"id": "plot2", "style": {"width": "600px", "height": "400px"}}),
+            ],
+        ),
         script,
         html.div({
             "tabIndex": 0,
@@ -513,7 +520,6 @@ def InteractiveGraph():
                 html.span(f"Value: {step}")
             ]
         ),
-        html.div({"id": "plot2", "style": {"width": "600px", "height": "400px"}}),
         html.button({
             "onClick": switch_modes,
             "style": {"fontSize": "20px"}
